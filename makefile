@@ -1,6 +1,6 @@
 FLAGS=-std=c++11 -Wall
 CXX=g++
-OUT=nn
+OUT=nn.out
 
 SRC=$(wildcard *.cpp)
 OBJ=$(SRC:%.cpp=%.o)
