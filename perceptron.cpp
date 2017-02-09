@@ -36,3 +36,11 @@ double Perceptron::backward() {
 double Perceptron::activation(const double x) const {
   return -1;
 }
+
+double Perceptron::get_output() const{
+  return this->output;
+}
+
+void Perceptron::set_grad(const double grad) {
+  this->grad = grad;
+}

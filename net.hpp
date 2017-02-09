@@ -20,9 +20,12 @@ namespace net {
   public:
     ~Net();
     Net(std::vector<int> dimensions, ActivationType type);
-    std::vector<double> forward(std::vector<double> inputs);
+    std::vector<double> forward(const std::vector<double> inputs);
+    void back_prop(const std::vector<double> expected);
+    std::vector<double> get_error(const std::vector<double> expected);
   private:
     std::vector<Layer> layers;
+    std::vector<double> curr_inputs;
     ActivationType activation_type;
     int input_count;
   };
