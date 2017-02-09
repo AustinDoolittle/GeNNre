@@ -1,5 +1,6 @@
 #include <vector>
 #include <iostream>
+#include <tuple>
 #include "net.hpp"
 
 #define NUM_OUTPUTS 1
@@ -7,16 +8,20 @@
 
 using namespace net;
 
+
 int main() {
-  std::vector<int> layout = {NUM_INPUTS, 3, NUM_OUTPUTS};
-  Net net(layout, Sigmoid);
-  std::vector<double> retVal = net.forward(std::vector<double>{2, 3});
-  for(double d : retVal) {
-    std::cout << "value: " << d << std::endl;
+  std::vector<int> layout = {NUM_INPUTS, 2,  NUM_OUTPUTS};
+  TrainingData training_sets;
+  for(int i = 0; i < 2; i++) {
+    for(int j = 0; j < 2; j++) {
+      training_sets.push_back(std::make_pair(std::vector<double>{(double)i, (double)j}, std::vector<double>{(double)(i | j)}));
+    }
   }
 
-  retVal = net.get_error(std::vector<double>{0});
-  for(double d : retVal) {
-    std::cout << "error: " << d << std::endl;
+  Net net(layout, Sigmoid);
+  net.to_s();
+  for(int i = 0; i < 1000; i++) {
+    net.train(training_sets);
   }
+  net.to_s();
 }

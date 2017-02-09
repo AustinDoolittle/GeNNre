@@ -14,8 +14,10 @@ namespace net {
     virtual ~Perceptron();
     double forward(const std::vector<double>& outputs, const std::vector<double>& weights);
     double backward();
+    void set_output(const double new_output);
     double get_output() const;
     void set_grad(const double grad);
+    double get_grad() const;
   };
 
   class SigmoidPerceptron: public Perceptron{

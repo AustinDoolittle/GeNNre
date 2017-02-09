@@ -4,16 +4,21 @@
 using namespace net;
 
 Perceptron::Perceptron() {
-
+  this->output = 1;
 }
 
 Perceptron::~Perceptron() {
 
 }
 
+double Perceptron::get_grad() const {
+  return this->grad;
+}
+
 double Perceptron::forward(const std::vector<double>& outputs, const std::vector<double>& weights) {
   if(outputs.size() != weights.size()) {
-    throw "Parameter size mismatch";
+    std::cerr << "Parameter size mismatch: outputs: " << outputs.size() << ", weights: " << weights.size() << std::endl;
+    throw ;
   }
 
   double sum = 0;
@@ -43,4 +48,8 @@ double Perceptron::get_output() const{
 
 void Perceptron::set_grad(const double grad) {
   this->grad = grad;
+}
+
+void Perceptron::set_output(const double new_output) {
+  this->output = new_output;
 }
