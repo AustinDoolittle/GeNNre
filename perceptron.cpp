@@ -1,4 +1,4 @@
-#include <math.h>
+#include <iostream>
 #include "perceptron.hpp"
 
 using namespace net;
@@ -8,47 +8,31 @@ Perceptron::Perceptron() {
 }
 
 Perceptron::~Perceptron() {
+
 }
 
-void Perceptron::forward() {
-  // double sum = 0;
-  // for(Edge* e : inputs) {
-  //   sum += e->get_weight() * e->get_front()->get_output();
-  // }
-  //this->output = this->activation(sum);
+double Perceptron::forward(const std::vector<double>& outputs, const std::vector<double>& weights) {
+  if(outputs.size() != weights.size()) {
+    throw "Parameter size mismatch";
+  }
+
+  double sum = 0;
+  for (int i = 0; i < outputs.size(); i++) {
+    sum += outputs[i] * weights[i];
+  }
+
+  this->output = activation(sum);
+  return this->output;
 }
-void Perceptron::backward() {
+
+double Perceptron::backward() {
   // this->grad = this->output * (1 - this->output);
   // for(Edge* e : outputs) {
   //   this->grad += e->get_weight() * e->get_end()->get_grad();
   // }
-}
-
-double Perceptron::activation(double x) {
   return -1;
 }
 
-double SigmoidPerceptron::activation(double x) {
-  return 1/(1+exp(-x));
-}
-
-SigmoidPerceptron::SigmoidPerceptron():Perceptron() {
-
-}
-
-SigmoidPerceptron::~SigmoidPerceptron() {
-
-}
-
-ReLUPerceptron::ReLUPerceptron():Perceptron() {
-
-}
-
-ReLUPerceptron::~ReLUPerceptron() {
-
-}
-
-double ReLUPerceptron::activation(double x) {
-  //TODO
+double Perceptron::activation(const double x) const {
   return -1;
 }

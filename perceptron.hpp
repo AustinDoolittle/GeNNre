@@ -3,23 +3,23 @@
 
 #include <vector>
 
-
 namespace net {
   class Perceptron{
   protected:
     double output;
     double grad;
-    virtual double activation(double x);
+    virtual double activation(const double x) const;
   public:
     Perceptron();
-    ~Perceptron();
-    void forward();
-    void backward();
+    virtual ~Perceptron();
+    double forward(const std::vector<double>& outputs, const std::vector<double>& weights);
+    double backward();
+    double get_output();
   };
 
   class SigmoidPerceptron: public Perceptron{
   protected:
-    double activation(double x);
+    virtual double activation(const double x) const;
   public:
     SigmoidPerceptron();
     ~SigmoidPerceptron();
@@ -27,7 +27,7 @@ namespace net {
 
   class ReLUPerceptron: public Perceptron{
   protected:
-    double activation(double x);
+    virtual double activation(const double x) const;
   public:
     ReLUPerceptron();
     ~ReLUPerceptron();
