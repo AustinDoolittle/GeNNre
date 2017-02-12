@@ -30,7 +30,9 @@ namespace net {
     std::vector<Layer> layers;
     std::vector<Weights> weights_arr;
     ActivationType activation_type;
+    std::vector<double> inputs;
     double train_rate;
+    int input_count;
     void load_inputs(const std::vector<double> inputs);
     std::vector<double> get_outputs(int index);
   };

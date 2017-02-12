@@ -13,20 +13,17 @@ Net::Net(std::vector<int> dimensions, ActivationType type, double train_rate) {
   srand(time(NULL));
   this->activation_type = type;
   this->train_rate = train_rate;
+  this->input_count = dimensions[0];
 
-  for(int i = 0; i < dimensions.size(); i++) {
-    int max = (i == (dimensions.size() - 1)) ? dimensions[i] : dimensions[i] + 1;
+  for(int i = 1; i < dimensions.size(); i++) {
 
+    //Weights w(dimensions[i-1] + 1, std::vector<double>(dimensions[i], (rand() % 3 - 1)));
+    Weights w(dimensions[i-1] + 1, std::vector<double>(dimensions[i], 1));
 
-    if (i != 0) {
-      // Weights w(dimensions[i-1], std::vector<double>(dimensions[i], 1));
-      Weights w(dimensions[i-1] + 1, std::vector<double>(max, (rand() % 3 - 1)));
-
-      this->weights_arr.push_back(w);
-    }
+    this->weights_arr.push_back(w);
 
     Layer temp;
-    for(int j = 0; j < max; j++) {
+    for(int j = 0; j < dimensions[i]; j++) {
       if(type == Sigmoid) {
         temp.push_back(new SigmoidPerceptron());
       }
@@ -57,19 +54,36 @@ std::vector<double> Net::get_outputs(int index) {
   for(int i = 0; i < layers[index].size(); i++) {
     retVal.push_back(layers[index][i]->get_output());
   }
+
+  //Add a bias if this is not the last layer
+  if(index != (layers.size() - 1)) {
+    retVal.push_back(1);
+  }
   return retVal;
 }
 
+void Net::load_inputs(const std::vector<double> vector) {
+  if(vector.size() != input_count) {
+    std::cerr << "Parameter size mismatch" << std::endl;
+    throw;
+  }
+  this->inputs = vector;
+}
+
 std::vector<double> Net::forward(const std::vector<double> inputs) {
-  this->load_inputs(inputs);
+  if(inputs.size() != input_count) {
+    std::cerr << "Incorrect inputs dimensions" << std::endl;
+    throw;
+  }
 
-  std::vector<double> v1 = get_outputs(0);
+  load_inputs(inputs);
 
-  for(int i = 1; i < layers.size(); i++) {
-    Weights* w = &weights_arr[i - 1];
+  std::vector<double> v1 = inputs;
+  v1.push_back(1); //for bias
 
-    int max = (i == (layers.size() - 1)) ? layers[i].size() : layers[i].size() - 1;
-    for(int j = 0; j < max; j++) {
+  for(int i = 0; i < layers.size(); i++) {
+    Weights* w = &weights_arr[i];
+    for(int j = 0; j < layers[i].size(); j++) {
       std::vector<double> edges;
       for(int k = 0; k < (*w).size(); k++) {
         edges.push_back((*w)[k][j]);
@@ -77,53 +91,55 @@ std::vector<double> Net::forward(const std::vector<double> inputs) {
 
       layers[i][j]->forward(v1, edges);
     }
-
     v1 = get_outputs(i);
   }
 
-  return get_outputs(layers.size()-1);
+  return v1;
 }
 
-void Net::load_inputs(const std::vector<double> inputs) {
-  if (inputs.size() != this->layers[0].size() - 1) {
-    std::cerr <<  "Incorrect inputs size" << std::endl;
-    throw;
-  }
-
-  for(int i = 0; i < inputs.size() - 1; i++) {
-    layers[0][i]->set_output(inputs[i]);
-  }
-}
 
 void Net::back_prop(const std::vector<double> expected) {
 
-  Layer* outputs = &layers[layers.size() - 1];
-  if(expected.size() != outputs->size()) {
+  if(expected.size() != layers.back().size()) {
     throw "Incorrect parameter size";
   }
 
-  //calculate last row error first
-  for(int i = 0; i < outputs->size(); i++) {
-    double val = (*outputs)[i]->get_output();
-    double grad = val * (1 - val) * (expected[i] - val);
-    (*outputs)[i]->set_grad(grad);
-  }
-
-  //calculate hidden layers
-  for(int i = layers.size() - 2; i >= 0; i--) {
-    //calculate error on these perceptrons
+  for(int i = layers.size() - 1; i >= 0; i--) {
     for(int j = 0; j < layers[i].size(); j++) {
-      double grad = layers[i][j]->get_output() * (1 - layers[i][j]->get_output());
-      for(int k = 0; k < weights_arr[i][j].size(); k++) {
-        grad *= (weights_arr[i][j][k] * layers[i+1][k]->get_grad());
-        weights_arr[i][j][k] += (this->train_rate * layers[i+1][k]->get_grad() * layers[i][j]->get_output());
+      double val = layers[i][j]->get_output();
+      double grad = 0;
+      if(i == layers.size() - 1) {
+        grad = (expected[j] - val);
       }
-      if(j != (layers[i].size() - 1))
-      {
-        layers[i][j]->set_output(grad);
+      else {
+        for(int k = 0; k < weights_arr[i+1][j].size(); k++) {
+          grad += weights_arr[i+1][j][k] * layers[i+1][k]->get_grad();
+        }
       }
+      grad *= val * (1 - val);
+      layers[i][j]->set_grad(grad);
     }
 
+    for(int w = 0; w < weights_arr[i].size(); w++) {
+      for(int e = 0; e < weights_arr[i][w].size(); e++) {
+
+        double val;
+        if(w == weights_arr[i].size() - 1) {
+          val = 1;
+        }
+        else {
+          if(i == 0) {
+            //Pull val from inputs
+            val = inputs[w];
+          }
+          else {
+            val = layers[i-1][w]->get_output();
+          }
+        }
+
+        weights_arr[i][w][e] += this->train_rate * layers[i][e]->get_grad() * val;
+      }
+    }
   }
 }
 
@@ -145,14 +161,39 @@ std::vector<double> Net::get_error(const std::vector<double> expected){
 }
 
 void Net::to_s() {
+  std::cout << "Inputs" << std::endl;
+  for(int i = 0; i < input_count; i++) {
+    std::cout << "\tInput" << i << ": " << this->inputs[i] << std::endl;
+    for(int w = 0; w < weights_arr[0][i].size(); w++) {
+      std::cout << "\t\tWeight" << w << ": " << weights_arr[0][i][w] << std::endl;
+    }
+  }
+
+  //print input Bias
+  std::cout << "\tBias" << std::endl;
+  for(int i = 0; i < weights_arr[0].back().size(); i++) {
+    std::cout << "\t\tWeight" << i << ": " << weights_arr[0].back()[i] << std::endl;
+  }
+
   for(int i = 0; i < layers.size(); i++) {
-    std::cout << "Layer " << i << std::endl;
+    if(i == layers.size() - 1) {
+      std::cout << "Output" << std::endl;
+    }
+    else {
+      std::cout << "Layer " << i << std::endl;
+    }
     for(int j = 0; j < layers[i].size(); j++) {
-      std::cout << "\tPerceptron " << j << ", value: " << layers[i][j]->get_output() << std::endl;
+      std::cout << "\tPerceptron " << j << ", value: " << layers[i][j]->get_output() << ", grad: " << layers[i][j]->get_grad() << std::endl;
       if(i != layers.size() - 1) {
-        for(int k = 0; k < weights_arr[i][j].size(); k++) {
-          std::cout << "\t\tWeight" << k << " " << k << ", value: " << weights_arr[i][j][k] << std::endl;
+        for(int k = 0; k < weights_arr[i+1][j].size(); k++) {
+          std::cout << "\t\tWeight" << k << " " << k << ", value: " << weights_arr[i+1][j][k] << std::endl;
         }
+      }
+    }
+    if(i != layers.size() - 1) {
+      std::cout << "\tBias " << std::endl;
+      for(int b = 0; b < weights_arr[i+1].back().size(); b++) {
+        std::cout << "\t\tWeight" << b << ": " << weights_arr[i].back()[b] << std::endl;
       }
     }
   }
