@@ -2,18 +2,20 @@
 #include <stdlib.h>
 #include <iostream>
 #include <cmath>
+#include <vector>
 #include "net.hpp"
 
 using namespace net;
 
-Net::Net(std::vector<int> dimensions, ActivationType type, double train_rate) {
+Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate) {
   if(dimensions.size() == 0) {
     throw "Invalid dimensions";
   }
   srand(time(NULL));
-  this->activation_type = type;
   this->train_rate = train_rate;
   this->input_count = dimensions[0];
+  this->class_type = class_type;
+  this->act_type = act_type;
 
   for(int i = 1; i < dimensions.size(); i++) {
 
@@ -24,10 +26,10 @@ Net::Net(std::vector<int> dimensions, ActivationType type, double train_rate) {
 
     Layer temp;
     for(int j = 0; j < dimensions[i]; j++) {
-      if(type == Sigmoid) {
+      if(act_type == Sigmoid) {
         temp.push_back(new SigmoidPerceptron());
       }
-      else if(type == ReLU) {
+      else if(act_type == ReLU) {
         temp.push_back(new ReLUPerceptron());
       }
     }
@@ -186,7 +188,7 @@ void Net::to_s() {
       std::cout << "\tPerceptron " << j << ", value: " << layers[i][j]->get_output() << ", grad: " << layers[i][j]->get_grad() << std::endl;
       if(i != layers.size() - 1) {
         for(int k = 0; k < weights_arr[i+1][j].size(); k++) {
-          std::cout << "\t\tWeight" << k << " " << k << ", value: " << weights_arr[i+1][j][k] << std::endl;
+          std::cout << "\t\tWeight: " << weights_arr[i+1][j][k] << std::endl;
         }
       }
     }
@@ -199,7 +201,7 @@ void Net::to_s() {
   }
 }
 
-void Net::train(TrainingData data ){
+void Net::train(DataSet data ){
   for(int i = 0; i < data.size(); i++) {
     std::cout << "Training: " << i << std::endl;
     std::cout << "\tInputs: ";
@@ -221,4 +223,40 @@ void Net::train(TrainingData data ){
     std::cout << std::endl << std::endl;
     back_prop(data[i].second);
   }
+}
+
+void Net::test(DataSet s) {
+  int total_count = s.size();
+  int correct = 0;
+  for(int i = 0; i < s.size(); i++) {
+    std::cout <<"Testing: " << i << std::endl;
+    std::vector<double> result = forward(s[i].first);
+    std::cout << "\tOutput/Expected: ";
+    for(int r = 0; r < result.size(); r++) {
+      std::cout << result[r] << "/" << s[i].second[r] << " ";
+    }
+    std::cout << std::endl;
+    if (this->class_type == Single) {
+      int max_index = 0;
+      int expected_index = 0;
+      for(int j = 1; j < result.size(); j++) {
+        if (result[j] > result[max_index]) {
+          max_index = j;
+        }
+        if(s[i].second[j] > s[i].second[expected_index]) {
+          expected_index = j;
+        }
+      }
+      if(max_index == expected_index) {
+        correct++;
+        std::cout << "\tCorrect\t" << correct << "/" << (i + 1) << std::endl;
+      }
+      else {
+        std::cout << "\tWrong\t" << correct << "/" << (i + 1) << std::endl;
+      }
+    }
+  }
+
+  std::cout << std::endl << std::endl << "~~ RESULTS ~~" << std::endl;
+  std::cout << correct << "/" << total_count << " correct, " << ((correct + 0.0)/total_count * 100) << "% Accuracy" << std::endl;
 }

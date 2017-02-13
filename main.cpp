@@ -1,11 +1,14 @@
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <sys/stat.h>
 #include <tuple>
 #include "boost/program_options.hpp"
 #include "net.hpp"
+
+#define DEF_TRAIN_RATE 0.5
 
 namespace po = boost::program_options;
 using namespace net;
@@ -15,9 +18,52 @@ using namespace net;
 * Code retrieved from user PherricOxide
 * http://stackoverflow.com/questions/12774207/fastest-way-to-check-if-a-file-exist-using-standard-c-c11-c
 */
-bool file_exists(std::string filename) {
+bool file_exists(const std::string filename) {
   struct stat buffer;
   return (stat (filename.c_str(), &buffer) == 0);
+}
+
+DataSet read_file(const std::string filename, const int input_count, const int class_count, const int max_outputs=1) {
+  DataSet sets;
+  std::ifstream ff;
+  ff.open(filename);
+  std::string line;
+  while(std::getline(ff, line)) {
+    std::stringstream ss;
+    ss << line;
+    std::vector<double> inputs;
+    std::vector<double> outputs;
+    std::vector<int> expected_classes;
+    double dtemp;
+    int itemp;
+    for(int i = 0; i < input_count; i++) {
+      ss >> dtemp;
+      inputs.push_back(dtemp);
+    }
+
+    for(int i = 0; i < max_outputs; i++) {
+      ss >> itemp;
+      if(ss.fail()) {
+        break;
+      }
+      else {
+        expected_classes.push_back(itemp);
+      }
+    }
+
+    for(int i = 0; i < class_count; i++) {
+      if(std::find(expected_classes.begin(), expected_classes.end(), i) != expected_classes.end()) {
+        outputs.push_back(1);
+      }
+      else {
+        outputs.push_back(0);
+      }
+    }
+
+    sets.push_back(std::make_pair(inputs, outputs));
+  }
+  ff.close();
+  return sets;
 }
 
 int main(int argc, char** argv) {
@@ -27,7 +73,9 @@ int main(int argc, char** argv) {
     ("help", "Display all arguments and their action")
     ("testfile", po::value<std::string>(), "The file to pull test data from")
     ("trainfile", po::value<std::string>(), "The file to pull training sets from")
-    ("traincount", po::value<int>(), "The amount of times to iterate over the train data (default 1)")
+    ("trainrate", po::value<double>(), "The weight to apply during back propogation")
+    ("relu", po::bool_switch()->default_value(false), "Use relu activation instead")
+    ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
     ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes)");
 
   po::variables_map vm;
@@ -43,12 +91,18 @@ int main(int argc, char** argv) {
   //declare variables
   std::string testfile;
   std::string trainfile;
-  int traincount = 1;
   std::vector<int> dimensions;
+  double trainrate = DEF_TRAIN_RATE;
+  ActivationType act_type = Sigmoid;
+  ClassificationType class_type = Single;
 
   //retrieve necessary parameters from args or user input
   if(vm.count("testfile")) {
     testfile = vm["testfile"].as<std::string>();
+    if(!file_exists(testfile)) {
+      std::cout << "Specified test file does not exist" << std::endl;
+      exit(1);
+    }
   }
   else {
     //testfile was not given in arguments, prompt user for file
@@ -67,6 +121,10 @@ int main(int argc, char** argv) {
 
   if(vm.count("trainfile")) {
     trainfile = vm["trainfile"].as<std::string>();
+    if(!file_exists(trainfile)) {
+      std::cout << "Specified train file does not exist" << std::endl;
+      exit(1);
+    }
   }
   else {
     //trainfile was not given in arguments, prompt user for file
@@ -91,8 +149,16 @@ int main(int argc, char** argv) {
       exit(1);
   }
 
-  if(vm.count("traincount")) {
-    traincount = vm["traincount"].as<int>();
+  if(vm.count("trainrate")) {
+    trainrate = vm["trainrate"].as<double>();
+  }
+
+  if(vm["relu"].as<bool>()) {
+    act_type = ReLU;
+  }
+
+  if(vm["multiclass"].as<bool>()) {
+    class_type = Multi;
   }
 
   std::cout << std::endl << std::endl;
@@ -100,26 +166,25 @@ int main(int argc, char** argv) {
   std::cout << "~~ Neural Network ~~" << std::endl;
   std::cout << "Dimensions (excluding bias): ";
   for(int i = 0; i < dimensions.size(); i++) {
-    std::cout << dimensions[i] < " ";
+    std::cout << dimensions[i] << " ";
   }
   std::cout << std::endl;
   std::cout << "Train File: " << trainfile << std::endl;
   std::cout << "Test File: " << testfile << std::endl;
-  std::cout << "Training Iterations: " << traincount << std::endl;
   std::cout << std::endl << std::endl;
 
-  //print arguments
 
-  TrainingData training_sets;
-  for(int i = 0; i < 2; i++) {
-    for(int j = 0; j < 2; j++) {
-      training_sets.push_back(std::make_pair(std::vector<double>{(double)i, (double)j}, std::vector<double>{(double)(i | j)}));
-    }
-  }
+  DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
 
-  Net net(dimensions, Sigmoid);
-  for(int i = 0; i < traincount; i++) {
-    net.train(training_sets);
-  }
+  Net net(dimensions, class_type, act_type, trainrate);
+
+  net.train(training_sets);
   net.to_s();
+
+  DataSet testing_sets = read_file(testfile, dimensions[0], dimensions.back());
+
+  net.test(training_sets);
+
+  exit(0);
+
 }
