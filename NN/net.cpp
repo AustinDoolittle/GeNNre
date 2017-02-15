@@ -7,7 +7,7 @@
 
 using namespace net;
 
-Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate) {
+Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, bool verbose) {
   if(dimensions.size() == 0) {
     throw "Invalid dimensions";
   }
@@ -16,6 +16,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   this->input_count = dimensions[0];
   this->class_type = class_type;
   this->act_type = act_type;
+  this->verbose = verbose;
 
   for(int i = 1; i < dimensions.size(); i++) {
 
@@ -203,24 +204,28 @@ void Net::to_s() {
 
 void Net::train(DataSet data ){
   for(int i = 0; i < data.size(); i++) {
-    std::cout << "Training: " << i << std::endl;
-    std::cout << "\tInputs: ";
-    for(int j = 0; j < data[i].first.size(); j++) {
-      std::cout << data[i].first[j] << " ";
+    if(this->verbose) {
+      std::cout << "Training: " << i << std::endl;
+      std::cout << "\tInputs: ";
+      for(int j = 0; j < data[i].first.size(); j++) {
+        std::cout << data[i].first[j] << " ";
+      }
     }
     std::vector<double> result = forward(data[i].first);
-
-    std::cout << std::endl << "\tOutputs: ";
-    for(int j = 0; j < data[i].second.size(); j++) {
-      std::cout << result[j] << "," << data[i].second[j] << " ";
+    if(this->verbose)
+    {
+      std::cout << std::endl << "\tOutputs: ";
+      for(int j = 0; j < data[i].second.size(); j++) {
+        std::cout << result[j] << "," << data[i].second[j] << " ";
+      }
+      std::cout << std::endl;
+      std::vector<double> err = get_error(data[i].second);
+      std::cout << "\tErrors: ";
+      for(int j = 0; j < err.size(); j++) {
+        std::cout << err[j] << " ";
+      }
+      std::cout << std::endl << std::endl;
     }
-    std::cout << std::endl;
-    std::vector<double> err = get_error(data[i].second);
-    std::cout << "\tErrors: ";
-    for(int j = 0; j < err.size(); j++) {
-      std::cout << err[j] << " ";
-    }
-    std::cout << std::endl << std::endl;
     back_prop(data[i].second);
   }
 }
@@ -229,13 +234,15 @@ void Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
   for(int i = 0; i < s.size(); i++) {
-    std::cout <<"Testing: " << i << std::endl;
     std::vector<double> result = forward(s[i].first);
-    std::cout << "\tOutput/Expected: ";
-    for(int r = 0; r < result.size(); r++) {
-      std::cout << result[r] << "/" << s[i].second[r] << " ";
+    if(this->verbose) {
+      std::cout <<"Testing: " << i << std::endl;
+      std::cout << "\tOutput/Expected: ";
+      for(int r = 0; r < result.size(); r++) {
+        std::cout << result[r] << "/" << s[i].second[r] << " ";
+      }
+      std::cout << std::endl;
     }
-    std::cout << std::endl;
     if (this->class_type == Single) {
       int max_index = 0;
       int expected_index = 0;
@@ -249,11 +256,18 @@ void Net::test(DataSet s) {
       }
       if(max_index == expected_index) {
         correct++;
-        std::cout << "\tCorrect\t" << correct << "/" << (i + 1) << std::endl;
+        if(this->verbose) {
+          std::cout << "\tCorrect\t" << correct << "/" << (i + 1) << std::endl;
+        }
       }
       else {
-        std::cout << "\tWrong\t" << correct << "/" << (i + 1) << std::endl;
+        if(this->verbose) {
+          std::cout << "\tWrong\t" << correct << "/" << (i + 1) << std::endl;
+        }
       }
+    }
+    else if(this->class_type == Multi) {
+      //TODO: implement
     }
   }
 

@@ -76,6 +76,8 @@ int main(int argc, char** argv) {
     ("trainrate", po::value<double>(), "The weight to apply during back propogation")
     ("relu", po::bool_switch()->default_value(false), "Use relu activation instead")
     ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
+    ("traincount", po::value<int>(), "The amount of times to iterate over the training data")
+    ("verbose", po::bool_switch()->default_value(false), "Print out more information during training and testing")
     ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes)");
 
   po::variables_map vm;
@@ -93,6 +95,7 @@ int main(int argc, char** argv) {
   std::string trainfile;
   std::vector<int> dimensions;
   double trainrate = DEF_TRAIN_RATE;
+  int traincount = 1;
   ActivationType act_type = Sigmoid;
   ClassificationType class_type = Single;
 
@@ -161,6 +164,10 @@ int main(int argc, char** argv) {
     class_type = Multi;
   }
 
+  if(vm.count("traincount")) {
+    traincount = vm["traincount"].as<int>();
+  }
+
   std::cout << std::endl << std::endl;
 
   std::cout << "~~ Neural Network ~~" << std::endl;
@@ -176,13 +183,18 @@ int main(int argc, char** argv) {
 
   DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
 
-  Net net(dimensions, class_type, act_type, trainrate);
+  Net net(dimensions, class_type, act_type, trainrate, vm["verbose"].as<bool>());
 
-  net.train(training_sets);
+  for(int i = 0; i < traincount; i++) {
+    std::cout << i + 1 << "/" << traincount << " Training" << std::endl;
+    net.train(training_sets);
+  }
+  std::cout << std::endl << "Final state:" << std::endl;
   net.to_s();
 
   DataSet testing_sets = read_file(testfile, dimensions[0], dimensions.back());
 
+  std::cout << "Testing: " << std::endl;
   net.test(training_sets);
 
   exit(0);

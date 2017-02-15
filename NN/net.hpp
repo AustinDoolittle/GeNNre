@@ -25,7 +25,7 @@ namespace net {
   class Net {
   public:
     ~Net();
-    Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate);
+    Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, bool verbose);
     std::vector<double> forward(const std::vector<double> inputs);
     void back_prop(const std::vector<double> expected);
     std::vector<double> get_error(const std::vector<double> expected);
@@ -40,6 +40,7 @@ namespace net {
     std::vector<double> inputs;
     double train_rate;
     int input_count;
+    bool verbose;
     void load_inputs(const std::vector<double> inputs);
     std::vector<double> get_outputs(int index);
   };

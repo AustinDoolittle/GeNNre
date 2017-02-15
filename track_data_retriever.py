@@ -5,6 +5,7 @@ import pickle
 import os.path
 import argparse as ap
 import spotipy.util as util
+import sys
 import spotipy
 import random
 
@@ -22,6 +23,7 @@ APP_SECRET_KEY = "840212a600484c27959867cbc92a9643"
 REDIRECT_URI = "http://google.com"
 
 DEF_KEY_FILE = "NN/genres.key"
+DEF_FEAT_FILE = "NN/features.key"
 
 
 #removes all non alpha characters from the list
@@ -131,8 +133,8 @@ def get_tracks(sp, playlist_id, genre_ids):
         pickle.dump(all_track_data, f, pickle.HIGHEST_PROTOCOL)
     return all_track_data
 
-def load_keys(keys):
-    f = open(keys, 'r')
+def load_keys(key_file):
+    f = open(key_file, 'r')
     lines = f.readlines()
     retval = {}
     for line in lines:
@@ -182,7 +184,7 @@ def get_artist_data(all_track_data, genre_ids, is_multiclass=False):
 
     return artist_genre_cache, artist_blacklist
 
-def get_track_features(all_track_data):
+def get_track_features(all_track_data, feature_list):
     song_ids = all_track_data.keys()
 
     is_running = True
@@ -198,45 +200,41 @@ def get_track_features(all_track_data):
         for features in tracks_features:
             if features is None:
                 continue
-            all_track_data[features['id']]['danceability'] = features['danceability']
-            all_track_data[features['id']]['energy'] = features['energy']
-            all_track_data[features['id']]['instrumentalness'] = features['instrumentalness']
-            all_track_data[features['id']]['key'] = features['key']
-            all_track_data[features['id']]['loudness'] = features['loudness']
-            all_track_data[features['id']]['mode'] = features['mode']
-            all_track_data[features['id']]['speechiness'] = features['speechiness']
-            all_track_data[features['id']]['tempo'] = features['tempo']
-            all_track_data[features['id']]['time_signature'] = features['time_signature']
-            all_track_data[features['id']]['valence'] = features['valence']
-            all_track_data[features['id']]['acousticness'] = features['acousticness']
+            for feature_name in feature_list.values():
+                all_track_data[features['id']][feature_name[0]] = features[feature_name[0]]
+            # all_track_data[features['id']]['danceability'] = features['danceability']
+            # all_track_data[features['id']]['energy'] = features['energy']
+            # all_track_data[features['id']]['instrumentalness'] = features['instrumentalness']
+            # all_track_data[features['id']]['key'] = features['key']
+            # all_track_data[features['id']]['loudness'] = features['loudness']
+            # all_track_data[features['id']]['mode'] = features['mode']
+            # all_track_data[features['id']]['speechiness'] = features['speechiness']
+            # all_track_data[features['id']]['tempo'] = features['tempo']
+            # all_track_data[features['id']]['time_signature'] = features['time_signature']
+            # all_track_data[features['id']]['valence'] = features['valence']
+            # all_track_data[features['id']]['acousticness'] = features['acousticness']
 
         if(len(song_ids) > MAX_ID_COUNT):
             del song_ids[:MAX_ID_COUNT]
 
-def write_to_file(all_track_data, train_filename, test_filename):
+def write_to_file(all_track_data, train_filename, test_filename, feature_list):
     print "Writing to file..."
 
     f_test = open(test_filename, 'w')
     f_train = open(train_filename, 'w')
 
     for track in all_track_data.keys():
-        if 'danceability' not in all_track_data[track]:
+        if feature_list[feature_list.keys()[0]][0] not in all_track_data[track]:
             print "Skipping " + all_track_data[track]['name']
             del all_track_data[track]
             continue
-        line = str(all_track_data[track]['danceability'])
-        line += " " + str(all_track_data[track]['energy'])
-        line += " " + str(all_track_data[track]['instrumentalness'])
-        line += " " + str(all_track_data[track]['key'])
-        line += " " + str(all_track_data[track]['loudness'])
-        line += " " + str(all_track_data[track]['mode'])
-        line += " " + str(all_track_data[track]['speechiness'])
-        line += " " + str(all_track_data[track]['tempo'])
-        line += " " + str(all_track_data[track]['time_signature'])
-        line += " " + str(all_track_data[track]['valence'])
-        line += " " + str(all_track_data[track]['acousticness'])
+        line = ''
+        for feature_name in feature_list.values():
+            line += str(all_track_data[track][feature_name[0]]) + ' '
+
         for g in all_track_data[track]['genre']:
-            line += " " + str(g)
+            line += str(g) + ' '
+
         line += "\n"
 
         if random.randint(0,3) == 0:
@@ -262,12 +260,11 @@ def bind_genres_to_tracks(all_track_data, genre_ids, artist_blacklist):
 def equalize(all_track_data, genre_count):
     min_genre = min(genre_count, key=genre_count.get)
     min_genre_count = genre_count[min_genre]
+    print "min genre: " + min_genre + ", with " + str(min_genre_count)
     for track in all_track_data.keys():
         should_break = True
         if genre_count[all_track_data[track]['genre'][0]] > min_genre_count:
             genre_count[all_track_data[track]['genre'][0]] -= 1
-            print "Removing a " + keys[all_track_data[track]['genre'][0]][0] + ", title: " + all_track_data[track]['name'] \
-                + ". Now " + str(genre_count[all_track_data[track]['genre'][0]]) + "/" + str(min_genre_count)
             del all_track_data[track]
             for genre in genre_count:
                 if genre_count[genre] != min_genre_count:
@@ -276,12 +273,39 @@ def equalize(all_track_data, genre_count):
             if should_break:
                 break
 
+def normalize(all_track_data, features, newmax, newmin):
+    feature_vars = {val[0]:{'min': sys.maxint, "max":(-sys.maxint - 1)} for val in features.values()}
+    count = 1
+    for track in all_track_data.keys():
+        print str(count) + '/' + str(len(all_track_data)) + ' Normalizing ' + all_track_data[track]['name']
+        count += 1
+        for feature in feature_vars:
+            if track not in all_track_data.keys():
+                continue
+            if feature not in all_track_data[track] or all_track_data[track][feature] is None:
+                del all_track_data[track]
+                continue
+
+            if all_track_data[track][feature] > feature_vars[feature]['max']:
+                feature_vars[feature]['max'] = all_track_data[track][feature]
+            if all_track_data[track][feature] < feature_vars[feature]['min']:
+                feature_vars[feature]['min'] = all_track_data[track][feature]
+
+    for track in all_track_data.keys():
+        for feature in feature_vars:
+            minval = feature_vars[feature]['min']
+            maxval = feature_vars[feature]['max']
+            all_track_data[track][feature] = (((all_track_data[track][feature] - minval) * (newmax - newmin)) / (maxval - minval)) + newmin
+
+
+
 #Start of main method
 if __name__ == "__main__":
     #parse arguments
     start_time = time.time()
     parser = ap.ArgumentParser(description="Retrieve data from the Spotify API regarding tracks and their genres")
     parser.add_argument("--keys", default=DEF_KEY_FILE,  help='The filename to retrieve genre keys from')
+    parser.add_argument("--features",default=DEF_FEAT_FILE, help='The filename to load the list of features from')
     parser.add_argument("--multiclass", action='store_true', help='Retrieve multiple genres for each track')
     parser.add_argument("--data", default=ALL_TRACK_DATA_FILE,  help='The .pkl file containing preretrieved data about the tracks')
     parser.add_argument("--outtrain", default=TEST_DATA_FILE,  help="The filename to write the train data out to")
@@ -314,12 +338,18 @@ if __name__ == "__main__":
 
     genre_count = bind_genres_to_tracks(all_track_data, keys, artist_blacklist)
 
+    print genre_count
+
     if args.equalize and not args.multiclass:
         equalize(all_track_data, genre_count)
 
-    get_track_features(all_track_data)
+    features = load_keys(args.features)
 
-    write_to_file(all_track_data, args.outtrain, args.outtest)
+    get_track_features(all_track_data, features)
+
+    normalize(all_track_data, features, 1, 0)
+
+    write_to_file(all_track_data, args.outtrain, args.outtest, features)
 
     print "Elapsed time: " + str(time.time() - start_time)
     print 'Track Count: ' + str(len(all_track_data))

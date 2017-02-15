@@ -31,5 +31,8 @@
 *.out
 *.app
 
-# stupid spotipy cache files
+# my stuff
 *.cache-*
+*.pkl
+*.dat
+*.key
