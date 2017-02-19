@@ -3,14 +3,16 @@
 
 #include <vector>
 #include <string>
+#include <math.h>
 #include <tuple>
+#include <armadillo>
+#include <iostream>
 #include "perceptron.hpp"
 
 namespace net {
 
-  typedef std::vector<std::vector<double>> Weights;
-  typedef std::vector<Perceptron*> Layer;
-  typedef std::vector<std::pair<std::vector<double>,std::vector<double>>> DataSet;
+
+  typedef std::vector<std::pair<arma::vec,arma::vec>> DataSet;
 
   enum ActivationType {
     Sigmoid,
@@ -26,23 +28,24 @@ namespace net {
   public:
     ~Net();
     Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, bool verbose);
-    std::vector<double> forward(const std::vector<double> inputs);
-    void back_prop(const std::vector<double> expected);
-    std::vector<double> get_error(const std::vector<double> expected);
+    arma::vec forward(const arma::vec inputs);
+    void back_prop(const arma::vec expected);
+    arma::vec get_error(const arma::vec expected);
     void train(DataSet data);
     void test(DataSet data);
-    void to_s();
+    std::string to_s();
   private:
     ActivationType act_type;
     ClassificationType class_type;
-    std::vector<Layer> layers;
-    std::vector<Weights> weights_arr;
-    std::vector<double> inputs;
+    std::vector<arma::mat> weights;
+    std::vector<arma::vec> layers;
     double train_rate;
     int input_count;
+    std::function<double(double)> activator;
+    std::function<double(double)> deriverator;
     bool verbose;
-    void load_inputs(const std::vector<double> inputs);
-    std::vector<double> get_outputs(int index);
+    void load_inputs(const arma::vec inputs);
+    // std::vector<double> get_outputs(int index);
   };
 }
 

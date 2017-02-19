@@ -1,11 +1,15 @@
 #include <time.h>
 #include <stdlib.h>
 #include <iostream>
-#include <cmath>
+#include <armadillo>
 #include <vector>
+#include <string>
+#include <random>
 #include "net.hpp"
 
 using namespace net;
+
+
 
 Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, bool verbose) {
   if(dimensions.size() == 0) {
@@ -18,188 +22,109 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   this->act_type = act_type;
   this->verbose = verbose;
 
-  for(int i = 1; i < dimensions.size(); i++) {
+  switch(act_type) {
+    default:
+    case Sigmoid:
+      this->activator = [](double val) {return 1.0/(1+std::exp(-val));};
+      this->deriverator = [](double val) {return val * (1-val);};
+      break;
+    case ReLU:
+      this->activator = [](double val) {return -1;};
+      this->deriverator =[](double val) {return -1;};
+  }
 
-    //Weights w(dimensions[i-1] + 1, std::vector<double>(dimensions[i], (rand() % 3 - 1)));
-    Weights w(dimensions[i-1] + 1, std::vector<double>(dimensions[i], 1));
+  std::mt19937 engine;  // Mersenne twister random number engine
 
-    this->weights_arr.push_back(w);
+  std::uniform_real_distribution<double> distr(-0.1, 0.1);
 
-    Layer temp;
-    for(int j = 0; j < dimensions[i]; j++) {
-      if(act_type == Sigmoid) {
-        temp.push_back(new SigmoidPerceptron());
-      }
-      else if(act_type == ReLU) {
-        temp.push_back(new ReLUPerceptron());
-      }
+  for(int i = 0; i < dimensions.size(); i++) {
+    if(i != dimensions.size()-1) {
+      this->weights.push_back(arma::mat(dimensions[i] + 1, dimensions[i+1]));
+      this->weights[i].imbue([&](){return distr(engine);});
+
+      this->layers.push_back(arma::vec(dimensions[i] + 1, arma::fill::ones));
     }
-
-    this->layers.push_back(temp);
+    else {
+      this->layers.push_back(arma::vec(dimensions[i], arma::fill::ones));
+    }
   }
 }
 
 Net::~Net() {
-  for(int i = 0; i < layers.size(); i++) {
-    for(int j = 0; j < layers[i].size(); j++) {
-      delete layers[i][j];
-    }
-  }
+
 }
 
-std::vector<double> Net::get_outputs(int index) {
-  if(index >= layers.size() || index < 0) {
-    std::cout << "Index out of bounds" << std::endl;
-    throw;
-  }
-
-  std::vector<double> retVal;
-  for(int i = 0; i < layers[index].size(); i++) {
-    retVal.push_back(layers[index][i]->get_output());
-  }
-
-  //Add a bias if this is not the last layer
-  if(index != (layers.size() - 1)) {
-    retVal.push_back(1);
-  }
-  return retVal;
-}
-
-void Net::load_inputs(const std::vector<double> vector) {
-  if(vector.size() != input_count) {
+void Net::load_inputs(const arma::vec vector) {
+  if(vector.n_rows != input_count) {
     std::cerr << "Parameter size mismatch" << std::endl;
     throw;
   }
-  this->inputs = vector;
+  this->layers[0].rows(1,layers[0].n_rows - 1) = vector;
 }
 
-std::vector<double> Net::forward(const std::vector<double> inputs) {
-  if(inputs.size() != input_count) {
-    std::cerr << "Incorrect inputs dimensions" << std::endl;
-    throw;
-  }
+arma::vec Net::forward(const arma::vec inputs) {
 
   load_inputs(inputs);
 
-  std::vector<double> v1 = inputs;
-  v1.push_back(1); //for bias
-
-  for(int i = 0; i < layers.size(); i++) {
-    Weights* w = &weights_arr[i];
-    for(int j = 0; j < layers[i].size(); j++) {
-      std::vector<double> edges;
-      for(int k = 0; k < (*w).size(); k++) {
-        edges.push_back((*w)[k][j]);
-      }
-
-      layers[i][j]->forward(v1, edges);
-    }
-    v1 = get_outputs(i);
-  }
-
-  return v1;
-}
-
-
-void Net::back_prop(const std::vector<double> expected) {
-
-  if(expected.size() != layers.back().size()) {
-    throw "Incorrect parameter size";
-  }
-
-  for(int i = layers.size() - 1; i >= 0; i--) {
-    for(int j = 0; j < layers[i].size(); j++) {
-      double val = layers[i][j]->get_output();
-      double grad = 0;
-      if(i == layers.size() - 1) {
-        grad = (expected[j] - val);
-      }
-      else {
-        for(int k = 0; k < weights_arr[i+1][j].size(); k++) {
-          grad += weights_arr[i+1][j][k] * layers[i+1][k]->get_grad();
-        }
-      }
-      grad *= val * (1 - val);
-      layers[i][j]->set_grad(grad);
-    }
-
-    for(int w = 0; w < weights_arr[i].size(); w++) {
-      for(int e = 0; e < weights_arr[i][w].size(); e++) {
-
-        double val;
-        if(w == weights_arr[i].size() - 1) {
-          val = 1;
-        }
-        else {
-          if(i == 0) {
-            //Pull val from inputs
-            val = inputs[w];
-          }
-          else {
-            val = layers[i-1][w]->get_output();
-          }
-        }
-
-        weights_arr[i][w][e] += this->train_rate * layers[i][e]->get_grad() * val;
-      }
-    }
-  }
-}
-
-std::vector<double> Net::get_error(const std::vector<double> expected){
-
-  Layer* outputs = &layers[layers.size() - 1];
-
-  if(expected.size() != outputs->size()) {
-    throw "Incorrect parameter size";
-  }
-
-  std::vector<double> retVal;
-  for(int i = 0; i < outputs->size(); i++) {
-    double err = .5 * pow(expected[i] - (*outputs)[i]->get_output(), 2);
-    retVal.push_back(err);
-  }
-
-  return retVal;
-}
-
-void Net::to_s() {
-  std::cout << "Inputs" << std::endl;
-  for(int i = 0; i < input_count; i++) {
-    std::cout << "\tInput" << i << ": " << this->inputs[i] << std::endl;
-    for(int w = 0; w < weights_arr[0][i].size(); w++) {
-      std::cout << "\t\tWeight" << w << ": " << weights_arr[0][i][w] << std::endl;
-    }
-  }
-
-  //print input Bias
-  std::cout << "\tBias" << std::endl;
-  for(int i = 0; i < weights_arr[0].back().size(); i++) {
-    std::cout << "\t\tWeight" << i << ": " << weights_arr[0].back()[i] << std::endl;
-  }
-
-  for(int i = 0; i < layers.size(); i++) {
-    if(i == layers.size() - 1) {
-      std::cout << "Output" << std::endl;
+  for (int i = 1; i < this->layers.size(); i++) {
+    if(i != this->layers.size() - 1) {
+      layers[i].rows(1, layers[i].n_rows - 1) = weights[i-1].t() * layers[i-1];
     }
     else {
-      std::cout << "Layer " << i << std::endl;
+      layers[i] = weights[i-1].t() * layers[i-1];
     }
-    for(int j = 0; j < layers[i].size(); j++) {
-      std::cout << "\tPerceptron " << j << ", value: " << layers[i][j]->get_output() << ", grad: " << layers[i][j]->get_grad() << std::endl;
-      if(i != layers.size() - 1) {
-        for(int k = 0; k < weights_arr[i+1][j].size(); k++) {
-          std::cout << "\t\tWeight: " << weights_arr[i+1][j][k] << std::endl;
+    layers[i].transform(this->activator);
+  }
+
+  return layers.back();
+}
+
+
+void Net::back_prop(const arma::vec expected) {
+  if(expected.n_rows != layers.back().n_rows) {
+    throw "Incorrect parameter size";
+  }
+
+  arma::vec gradients = expected - layers.back();
+  gradients.transform(this->deriverator);
+
+
+  for(int i = layers.size()-2; i >= 0; i--) {
+    weights[i] += (this->train_rate * (layers[i] * gradients.t()));
+    gradients = weights[i].submat(1,0,weights[i].n_rows-1, weights[i].n_cols-1) * gradients;
+    gradients.transform(this->deriverator);
+  }
+}
+
+arma::vec Net::get_error(const arma::vec expected){
+
+  arma::vec outputs = layers.back();
+
+  if(expected.n_rows != outputs.n_rows) {
+    throw "Incorrect parameter size";
+  }
+
+  arma::vec retVal;
+
+  return .5 * square(expected - outputs);
+}
+
+std::string Net::to_s() {
+  std::string retval = "";
+  for(int i = 0; i < layers.size(); i++) {
+    retval += "Layer " + std::to_string(i) + ":\n";
+    for(int j = 0; j < layers[i].n_rows; j++) {
+      retval += "\tNode " + std::to_string(j) + ": " + std::to_string(layers[i](j)) + "\n";
+      if (i != layers.size() - 1){
+        arma::rowvec row_weight = weights[i].row(j);
+        for(int k = 0; k < row_weight.n_cols; k++) {
+          retval += "\t\tWeight " + std::to_string(k) + ": " + std::to_string(row_weight(k)) + "\n";
         }
       }
     }
-    if(i != layers.size() - 1) {
-      std::cout << "\tBias " << std::endl;
-      for(int b = 0; b < weights_arr[i+1].back().size(); b++) {
-        std::cout << "\t\tWeight" << b << ": " << weights_arr[i].back()[b] << std::endl;
-      }
-    }
   }
+
+  return retval;
 }
 
 void Net::train(DataSet data ){
@@ -207,22 +132,23 @@ void Net::train(DataSet data ){
     if(this->verbose) {
       std::cout << "Training: " << i << std::endl;
       std::cout << "\tInputs: ";
-      for(int j = 0; j < data[i].first.size(); j++) {
-        std::cout << data[i].first[j] << " ";
+      for(int j = 0; j < data[i].first.n_rows; j++) {
+        std::cout << data[i].first(j) << " ";
       }
+      std::cout << std::endl;
     }
-    std::vector<double> result = forward(data[i].first);
+    arma::vec result = forward(data[i].first);
     if(this->verbose)
     {
       std::cout << std::endl << "\tOutputs: ";
-      for(int j = 0; j < data[i].second.size(); j++) {
-        std::cout << result[j] << "," << data[i].second[j] << " ";
+      for(int j = 0; j < data[i].second.n_rows; j++) {
+        std::cout << result[j] << "," << data[i].second(j) << " ";
       }
       std::cout << std::endl;
-      std::vector<double> err = get_error(data[i].second);
+      arma::vec err = get_error(data[i].second);
       std::cout << "\tErrors: ";
-      for(int j = 0; j < err.size(); j++) {
-        std::cout << err[j] << " ";
+      for(int j = 0; j < err.n_cols; j++) {
+        std::cout << err(j) << " ";
       }
       std::cout << std::endl << std::endl;
     }
@@ -234,12 +160,12 @@ void Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
   for(int i = 0; i < s.size(); i++) {
-    std::vector<double> result = forward(s[i].first);
+    arma::vec result = forward(s[i].first);
     if(this->verbose) {
-      std::cout <<"Testing: " << i << std::endl;
+      std::cout << "Testing: " << i << std::endl;
       std::cout << "\tOutput/Expected: ";
-      for(int r = 0; r < result.size(); r++) {
-        std::cout << result[r] << "/" << s[i].second[r] << " ";
+      for(int r = 0; r < result.n_rows; r++) {
+        std::cout << result(r) << "/" << s[i].second(r) << " ";
       }
       std::cout << std::endl;
     }
@@ -247,10 +173,10 @@ void Net::test(DataSet s) {
       int max_index = 0;
       int expected_index = 0;
       for(int j = 1; j < result.size(); j++) {
-        if (result[j] > result[max_index]) {
+        if (result(j) > result(max_index)) {
           max_index = j;
         }
-        if(s[i].second[j] > s[i].second[expected_index]) {
+        if(s[i].second(j) > s[i].second(expected_index)) {
           expected_index = j;
         }
       }

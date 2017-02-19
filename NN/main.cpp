@@ -60,7 +60,7 @@ DataSet read_file(const std::string filename, const int input_count, const int c
       }
     }
 
-    sets.push_back(std::make_pair(inputs, outputs));
+    sets.push_back(std::make_pair(arma::vec(inputs), arma::vec(outputs)));
   }
   ff.close();
   return sets;
@@ -184,7 +184,7 @@ int main(int argc, char** argv) {
   DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
 
   Net net(dimensions, class_type, act_type, trainrate, vm["verbose"].as<bool>());
-
+  std::cout << net.to_s() << std::endl;
   for(int i = 0; i < traincount; i++) {
     std::cout << i + 1 << "/" << traincount << " Training" << std::endl;
     net.train(training_sets);
