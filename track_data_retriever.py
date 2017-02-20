@@ -66,7 +66,7 @@ def get_genre(genres, genre_ids, is_multiclass=False):
                         temp[genre] = genre_list[genre]
     else:
         maxval = max(genre_list.items(), key=lambda x: x[1]['count'])
-        if maxval[1] != 0:
+        if maxval[1]['count'] != 0:
             temp[maxval[0]] = maxval[1]
 
     # print "Genre List: "
@@ -260,7 +260,7 @@ def bind_genres_to_tracks(all_track_data, genre_ids, artist_blacklist):
 def equalize(all_track_data, genre_count):
     min_genre = min(genre_count, key=genre_count.get)
     min_genre_count = genre_count[min_genre]
-    print "min genre: " + min_genre + ", with " + str(min_genre_count)
+    print "min genre: " + str(min_genre) + ", with " + str(min_genre_count)
     for track in all_track_data.keys():
         should_break = True
         if genre_count[all_track_data[track]['genre'][0]] > min_genre_count:
@@ -273,7 +273,7 @@ def equalize(all_track_data, genre_count):
             if should_break:
                 break
 
-def normalize(all_track_data, features, newmax, newmin):
+def normalize(all_track_data, features, newmin, newmax):
     feature_vars = {val[0]:{'min': sys.maxint, "max":(-sys.maxint - 1)} for val in features.values()}
     count = 1
     for track in all_track_data.keys():
@@ -347,7 +347,7 @@ if __name__ == "__main__":
 
     get_track_features(all_track_data, features)
 
-    normalize(all_track_data, features, 1, 0)
+    normalize(all_track_data, features, -1, 1)
 
     write_to_file(all_track_data, args.outtrain, args.outtest, features)
 

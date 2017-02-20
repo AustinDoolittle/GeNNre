@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <iostream>
 #include <armadillo>
+#include <math.h>
 #include <vector>
 #include <string>
 #include <random>
@@ -11,7 +12,7 @@ using namespace net;
 
 
 
-Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, bool verbose) {
+Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, double momentum, bool verbose) {
   if(dimensions.size() == 0) {
     throw "Invalid dimensions";
   }
@@ -21,16 +22,21 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   this->class_type = class_type;
   this->act_type = act_type;
   this->verbose = verbose;
+  this->momentum = momentum;
 
   switch(act_type) {
     default:
     case Sigmoid:
       this->activator = [](double val) {return 1.0/(1+std::exp(-val));};
-      this->deriverator = [](double val) {return val * (1-val);};
+      this->deriverator = [](arma::vec val) {arma::vec retval(val); return retval % (1-retval);};
       break;
     case ReLU:
-      this->activator = [](double val) {return -1;};
-      this->deriverator =[](double val) {return -1;};
+      this->activator = [](double val) {return val > 0 ? val : 0;};
+      this->deriverator =[](arma::vec val) {
+        arma::vec retval(val);
+        retval.transform([](double d) {return d >= 0 ? d : 0;});
+        return retval;
+      };
   }
 
   std::mt19937 engine;  // Mersenne twister random number engine
@@ -41,7 +47,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
     if(i != dimensions.size()-1) {
       this->weights.push_back(arma::mat(dimensions[i] + 1, dimensions[i+1]));
       this->weights[i].imbue([&](){return distr(engine);});
-
+      this->del_weights.push_back(arma::mat(dimensions[i] + 1, dimensions[i+1], arma::fill::zeros));
       this->layers.push_back(arma::vec(dimensions[i] + 1, arma::fill::ones));
     }
     else {
@@ -86,17 +92,18 @@ void Net::back_prop(const arma::vec expected) {
   }
 
   arma::vec gradients = expected - layers.back();
-  gradients.transform(this->deriverator);
+  gradients %= this->deriverator(layers.back());
 
 
   for(int i = layers.size()-2; i >= 0; i--) {
-    weights[i] += (this->train_rate * (layers[i] * gradients.t()));
+    del_weights[i] = (this->train_rate * (layers[i] * gradients.t())) + (this->momentum * del_weights[i]);
+    weights[i] += del_weights[i];
     gradients = weights[i].submat(1,0,weights[i].n_rows-1, weights[i].n_cols-1) * gradients;
-    gradients.transform(this->deriverator);
+    gradients %= this->deriverator(layers[i].rows(1, layers[i].n_rows-1));
   }
 }
 
-arma::vec Net::get_error(const arma::vec expected){
+double Net::get_error(const arma::vec expected){
 
   arma::vec outputs = layers.back();
 
@@ -104,9 +111,7 @@ arma::vec Net::get_error(const arma::vec expected){
     throw "Incorrect parameter size";
   }
 
-  arma::vec retVal;
-
-  return .5 * square(expected - outputs);
+  return arma::sum(arma::square(expected - outputs)) / expected.n_rows;
 }
 
 std::string Net::to_s() {
@@ -127,39 +132,10 @@ std::string Net::to_s() {
   return retval;
 }
 
-void Net::train(DataSet data ){
-  for(int i = 0; i < data.size(); i++) {
-    if(this->verbose) {
-      std::cout << "Training: " << i << std::endl;
-      std::cout << "\tInputs: ";
-      for(int j = 0; j < data[i].first.n_rows; j++) {
-        std::cout << data[i].first(j) << " ";
-      }
-      std::cout << std::endl;
-    }
-    arma::vec result = forward(data[i].first);
-    if(this->verbose)
-    {
-      std::cout << std::endl << "\tOutputs: ";
-      for(int j = 0; j < data[i].second.n_rows; j++) {
-        std::cout << result[j] << "," << data[i].second(j) << " ";
-      }
-      std::cout << std::endl;
-      arma::vec err = get_error(data[i].second);
-      std::cout << "\tErrors: ";
-      for(int j = 0; j < err.n_cols; j++) {
-        std::cout << err(j) << " ";
-      }
-      std::cout << std::endl << std::endl;
-    }
-    back_prop(data[i].second);
-  }
-}
-
 void Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
-  for(int i = 0; i < s.size(); i++) {
+  for(int i = 0; i < total_count; i++) {
     arma::vec result = forward(s[i].first);
     if(this->verbose) {
       std::cout << "Testing: " << i << std::endl;
@@ -196,7 +172,38 @@ void Net::test(DataSet s) {
       //TODO: implement
     }
   }
-
   std::cout << std::endl << std::endl << "~~ RESULTS ~~" << std::endl;
   std::cout << correct << "/" << total_count << " correct, " << ((correct + 0.0)/total_count * 100) << "% Accuracy" << std::endl;
+
+}
+
+void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval) {
+  int train_index = 0;
+  int test_index = 0;
+  int counter = 0;
+  while(true) {
+    std::cout << "Training " << counter << std::endl;
+    double error_sum = 0;
+    for(int i = 0; i < training_interval; i++) {
+      forward(train_data[train_index].first);
+      error_sum += get_error(train_data[train_index].second);
+      back_prop(train_data[train_index].second);
+      train_index = (train_index + 1) % train_data.size();
+      counter++;
+    }
+    double train_avg = error_sum / training_interval;
+
+    //test with test data
+    std::cout << "Testing..." << std::endl;
+    forward(test_data[test_index].first);
+    double val_avg = get_error(test_data[test_index].second);
+    if (val_avg <= target) {
+      std::cout << "finished training: " << val_avg << std::endl;
+      break;
+    }
+    else {
+      std::cout << "\tTrain Error: " << train_avg << ", Validate Error: " << val_avg << ", Target: " << target << std::endl;
+      test_index = (test_index + 1) % test_data.size();
+    }
+  }
 }

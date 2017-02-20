@@ -5,10 +5,14 @@
 #include <string>
 #include <sys/stat.h>
 #include <tuple>
+#include <algorithm>
 #include "boost/program_options.hpp"
 #include "net.hpp"
 
 #define DEF_TRAIN_RATE 0.5
+#define DEF_TRTE_INTER 10
+#define DEF_TARGET .2
+#define DEF_MOMENTUM .5
 
 namespace po = boost::program_options;
 using namespace net;
@@ -76,8 +80,10 @@ int main(int argc, char** argv) {
     ("trainrate", po::value<double>(), "The weight to apply during back propogation")
     ("relu", po::bool_switch()->default_value(false), "Use relu activation instead")
     ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
-    ("traincount", po::value<int>(), "The amount of times to iterate over the training data")
+    ("target", po::value<double>(), "The target error to hit while training")
     ("verbose", po::bool_switch()->default_value(false), "Print out more information during training and testing")
+    ("interval", po::value<int>(), "The amount of training iterations before testing for error")
+    ("momentum", po::value<double>(), "The value for momentum (0 <= m <= 1)")
     ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes)");
 
   po::variables_map vm;
@@ -95,7 +101,9 @@ int main(int argc, char** argv) {
   std::string trainfile;
   std::vector<int> dimensions;
   double trainrate = DEF_TRAIN_RATE;
-  int traincount = 1;
+  double target = DEF_TARGET;
+  double momentum = DEF_MOMENTUM;
+  int trte_inter = DEF_TRTE_INTER;
   ActivationType act_type = Sigmoid;
   ClassificationType class_type = Single;
 
@@ -144,6 +152,18 @@ int main(int argc, char** argv) {
     while (true);
   }
 
+  if(vm.count("momentum")) {
+    momentum = vm["momentum"].as<double>();
+  }
+
+  if(vm.count("trteinter")) {
+    trte_inter = vm["trteinter"].as<int>();
+  }
+
+  if(vm.count("target")) {
+    target = vm["target"].as<double>();
+  }
+
   if(vm.count("dimensions")) {
     dimensions = vm["dimensions"].as<std::vector<int>>();
   }
@@ -164,10 +184,6 @@ int main(int argc, char** argv) {
     class_type = Multi;
   }
 
-  if(vm.count("traincount")) {
-    traincount = vm["traincount"].as<int>();
-  }
-
   std::cout << std::endl << std::endl;
 
   std::cout << "~~ Neural Network ~~" << std::endl;
@@ -182,20 +198,19 @@ int main(int argc, char** argv) {
 
 
   DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
-
-  Net net(dimensions, class_type, act_type, trainrate, vm["verbose"].as<bool>());
-  std::cout << net.to_s() << std::endl;
-  for(int i = 0; i < traincount; i++) {
-    std::cout << i + 1 << "/" << traincount << " Training" << std::endl;
-    net.train(training_sets);
-  }
-  std::cout << std::endl << "Final state:" << std::endl;
-  net.to_s();
+  //shuffle contents
+  std::random_shuffle(training_sets.begin(), training_sets.end());
 
   DataSet testing_sets = read_file(testfile, dimensions[0], dimensions.back());
+  //shuffle contents
+  std::random_shuffle(testing_sets.begin(), training_sets.end());
 
-  std::cout << "Testing: " << std::endl;
-  net.test(training_sets);
+  Net net(dimensions, class_type, act_type, trainrate, momentum, vm["verbose"].as<bool>());
+  std::cout << net.to_s() << std::endl;
+
+  net.train_and_test(training_sets, testing_sets, target, trte_inter);
+
+  net.test(testing_sets);
 
   exit(0);
 
