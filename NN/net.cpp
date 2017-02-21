@@ -12,12 +12,12 @@ using namespace net;
 
 
 
-Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double train_rate, double momentum, bool verbose) {
+Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double momentum, bool verbose) {
   if(dimensions.size() == 0) {
     throw "Invalid dimensions";
   }
   srand(time(NULL));
-  this->train_rate = train_rate;
+  this->train_rate = DEF_TRAIN_RATE;
   this->input_count = dimensions[0];
   this->class_type = class_type;
   this->act_type = act_type;
@@ -27,16 +27,13 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   switch(act_type) {
     default:
     case Sigmoid:
-      this->activator = [](double val) {return 1.0/(1+std::exp(-val));};
-      this->deriverator = [](arma::vec val) {arma::vec retval(val); return retval % (1-retval);};
+      this->activator = SIG_ACT;
       break;
     case ReLU:
-      this->activator = [](double val) {return val > 0 ? val : 0;};
-      this->deriverator =[](arma::vec val) {
-        arma::vec retval(val);
-        retval.transform([](double d) {return d >= 0 ? d : 0;});
-        return retval;
-      };
+      this->activator = RELU_ACT;
+      break;
+    case TanH:
+      this->activator = TANH_ACT;
   }
 
   std::mt19937 engine;  // Mersenne twister random number engine
@@ -75,10 +72,16 @@ arma::vec Net::forward(const arma::vec inputs) {
   for (int i = 1; i < this->layers.size(); i++) {
     if(i != this->layers.size() - 1) {
       layers[i].rows(1, layers[i].n_rows - 1) = weights[i-1].t() * layers[i-1];
+
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
+      if(this->act_type == ReLU) {
+        layers[i].transform(SIG_ACT);
+        break;
+      }
     }
+
     layers[i].transform(this->activator);
   }
 
@@ -91,15 +94,34 @@ void Net::back_prop(const arma::vec expected) {
     throw "Incorrect parameter size";
   }
 
-  arma::vec gradients = expected - layers.back();
-  gradients %= this->deriverator(layers.back());
+  arma::vec back(layers.back());
+  arma::vec gradients = expected - back;
+  if(this->act_type == ReLU) {
+    gradients %= back % (1-back);
+  }
+  else {
+    gradients %= deriverator(back);
+  }
 
-
+  prev_del_weights = del_weights;
   for(int i = layers.size()-2; i >= 0; i--) {
     del_weights[i] = (this->train_rate * (layers[i] * gradients.t())) + (this->momentum * del_weights[i]);
     weights[i] += del_weights[i];
     gradients = weights[i].submat(1,0,weights[i].n_rows-1, weights[i].n_cols-1) * gradients;
     gradients %= this->deriverator(layers[i].rows(1, layers[i].n_rows-1));
+  }
+}
+
+arma::vec Net::deriverator(arma::vec v) {
+  switch(this->act_type){
+    case Sigmoid:
+      return v % (1-v);
+    case ReLU:
+      return v.transform([](double d) {return d > 0 ? 1 : LEAKY_RELU_CONST;});
+    case TanH:
+      return v.transform([](double d) {return 1 - std::pow((2.0 / (1.0 + std::exp(-2.0 * d))) - 1, 2);});
+    default:
+      return v;
   }
 }
 
@@ -132,7 +154,7 @@ std::string Net::to_s() {
   return retval;
 }
 
-void Net::test(DataSet s) {
+double Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
   for(int i = 0; i < total_count; i++) {
@@ -172,38 +194,82 @@ void Net::test(DataSet s) {
       //TODO: implement
     }
   }
-  std::cout << std::endl << std::endl << "~~ RESULTS ~~" << std::endl;
-  std::cout << correct << "/" << total_count << " correct, " << ((correct + 0.0)/total_count * 100) << "% Accuracy" << std::endl;
+  if(this->verbose) {
+    std::cout << std::endl << std::endl << "~~ RESULTS ~~" << std::endl;
+    std::cout << correct << "/" << total_count << " correct, " << ((correct + 0.0)/total_count * 100) << "% Accuracy" << std::endl;
+  }
+  return (correct + 0.0)/total_count;
+}
 
+void Net::rollback_weights() {
+  for(int i = 0; i < weights.size(); i++) {
+    weights[i] -= del_weights[i];
+  }
+  del_weights = prev_del_weights;
 }
 
 void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval) {
   int train_index = 0;
   int test_index = 0;
+  double prev_err = .5;
+
   int counter = 0;
   while(true) {
-    std::cout << "Training " << counter << std::endl;
+    if(this->verbose) {
+      std::cout << "Training " << counter << std::endl;
+    }
     double error_sum = 0;
     for(int i = 0; i < training_interval; i++) {
-      forward(train_data[train_index].first);
-      error_sum += get_error(train_data[train_index].second);
+      arma::vec res = forward(train_data[train_index].first);
+      if(this->verbose) {
+        std::cout << "Outputs/Expected: ";
+        for(int j = 0; j < res.n_rows; j++) {
+          std::cout << res(j) << "/" << train_data[train_index].second(j) << " ";
+        }
+        std::cout << std::endl;
+      }
+      double err = get_error(train_data[train_index].second);
+      error_sum += err;
+
+
       back_prop(train_data[train_index].second);
       train_index = (train_index + 1) % train_data.size();
+
+      //Change train rate at the end of an epoch
+      if(train_index == 0) {
+        if(err < prev_err) {
+          this->train_rate *= 1.05;
+        }
+        else if(err > (prev_err + ERR_CHANGE)) {
+          rollback_weights();
+          this->train_rate *= .5;
+        }
+        prev_err = err;
+      }
       counter++;
     }
     double train_avg = error_sum / training_interval;
 
     //test with test data
-    std::cout << "Testing..." << std::endl;
+    if(this->verbose) {
+      std::cout << "Testing..." << std::endl;
+    }
     forward(test_data[test_index].first);
     double val_avg = get_error(test_data[test_index].second);
     if (val_avg <= target) {
-      std::cout << "finished training: " << val_avg << std::endl;
+      if(this->verbose) {
+        std::cout << "finished training: " << val_avg << std::endl;
+      }
       break;
     }
     else {
-      std::cout << "\tTrain Error: " << train_avg << ", Validate Error: " << val_avg << ", Target: " << target << std::endl;
+      if(this->verbose) {
+        std::cout << "\tTrain Error: " << train_avg << ", Validate Error: " << val_avg << ", Target: " << target << std::endl;
+      }
       test_index = (test_index + 1) % test_data.size();
+    }
+    if(counter > 2000000) {
+      break;
     }
   }
 }
