@@ -331,7 +331,7 @@ if __name__ == "__main__":
     get_track_features(all_track_data, features)
 
     if args.normalize:
-        normalize(all_track_data, features, 0, 1)
+        normalize(all_track_data, features, -1, 1)
 
     write_to_file(all_track_data, args.outtrain, args.outtest, features)
 

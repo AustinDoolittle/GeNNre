@@ -13,11 +13,12 @@
 #define DEF_TRTE_INTER 10
 #define DEF_TARGET .2
 #define DEF_MOMENTUM .5
+#define DIVERGE_COUNT 3
 #define DEF_INPUTS 11
 #define DEF_OUTPUTS 4
-#define RELU_STAT_FILE "relu_stat.csv"
-#define SIG_STAT_FILE "sig_stat.csv"
-#define TANH_STAT_FILE "tanh_stat.csv";
+#define RELU_STAT_FILE "relu.csv"
+#define SIG_STAT_FILE "sig.csv"
+#define TANH_STAT_FILE "tanh.csv";
 
 namespace po = boost::program_options;
 using namespace net;
@@ -80,20 +81,21 @@ int main(int argc, char** argv) {
   //Setup argument parsing
   po::options_description desc("Allowed Arguments");
   desc.add_options()
-    ("help", "Display all arguments and their action")
+    ("help,h", "Display all arguments and their action")
     ("testfile", po::value<std::string>(), "The file to pull test data from")
     ("trainfile", po::value<std::string>(), "The file to pull training sets from")
-    ("relu", po::bool_switch()->default_value(false), "Use relu activation instead")
+    ("relu,", po::bool_switch()->default_value(false), "Use relu activation instead")
     ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
-    ("target", po::value<double>(), "The target error to hit while training")
+    ("target,t", po::value<double>(), "The target error to hit while training")
     ("tanh", po::bool_switch()->default_value(false), "Use TanH Activation")
-    ("verbose", po::bool_switch()->default_value(false), "Print out more information during training and testing")
-    ("interval", po::value<int>(), "The amount of training iterations before testing for error")
+    ("verbose,v", po::bool_switch()->default_value(false), "Print out more information during training and testing")
+    ("interval,i", po::value<int>(), "The amount of training iterations before testing for error")
     ("inputcount", po::value<int>(), "The amount of inputs to the network (ONLY USED FOR BENCHMARKING)")
     ("outputcount", po::value<int>(), "The amount of outputs from the network (ONLY USED FOR BENCHMARKING)")
-    ("momentum", po::value<double>(), "The value for momentum (0 <= m <= 1)")
+    ("momentum,m", po::value<double>(), "The value for momentum (0 <= m <= 1)")
+    ("diverge", po::value<int>(), "The count of consecutive divergence in the validation set before stopping training (also the upper bound in benchmarking)")
     ("benchmark", po::bool_switch()->default_value(false), "Test the different configurations and store the results in a CSV")
-    ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
+    ("dimensions,d", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -108,9 +110,14 @@ int main(int argc, char** argv) {
   //declare variables
   std::string testfile;
   std::string trainfile;
+  int diverge_count = DIVERGE_COUNT;
   ClassificationType class_type = Single;
   int trte_inter = DEF_TRTE_INTER;
   double target = DEF_TARGET;
+
+  if(vm.count("diverge")) {
+    diverge_count = vm["diverge"].as<int>();
+  }
 
   //retrieve necessary parameters from args or user input
   if(vm.count("testfile")) {
@@ -200,6 +207,9 @@ int main(int argc, char** argv) {
       std::cout << "Done Reading testing file" << std::endl;
     }
 
+    size_t lastindex = trainfile.find_last_of(".");
+    std::string trainfile_noext = trainfile.substr(0, lastindex);
+
     std::cout << "Benchmarking..." << std::endl;
     for(int i = 0; i < 3; i++) {
       ActivationType act;
@@ -208,23 +218,27 @@ int main(int argc, char** argv) {
       switch(i) {
         case 0:
           act = Sigmoid;
-          filename = SIG_STAT_FILE;
+          filename = trainfile_noext + "_" + SIG_STAT_FILE;
           act_string = "Sigmoid";
           break;
         case 1:
           act = ReLU;
-          filename = RELU_STAT_FILE;
+          filename = trainfile_noext + "_" + RELU_STAT_FILE;
           act_string = "ReLU";
           break;
         case 2:
           act = TanH;
-          filename = TANH_STAT_FILE;
+          filename = trainfile_noext + "_" + TANH_STAT_FILE;
           act_string = "TanH";
           break;
       }
       std::ofstream of(filename);
-      of << ",0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9\n";
-      for(int h1 = outputcount; h1 < inputcount + 2; h1++) {
+      double max_accuracy = 0;
+      std::string max_dimensions = "";
+      int max_diverge = 0;
+      double max_momentum = 0;
+      of << "Dimensions,Diverge Count,Momentum,Accuracy,Testing Time\n";
+      for(int h1 = 1; h1 < inputcount + 2; h1++) {
         for(int h2 = 0; h2 < inputcount + 2; h2++) {
           std::vector<int> dimensions;
           std::string dimen_string = std::to_string(inputcount) + " " + std::to_string(h1) + " ";
@@ -236,25 +250,37 @@ int main(int argc, char** argv) {
           }
           dimensions.push_back(outputcount);
           dimen_string += std::to_string(outputcount);
-          of << dimen_string;
-          for(double m = 0.1; m < .999; m += 0.1) {
-            std::clock_t ts, te;
-            Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>());
+          for (int d = 1; d <= diverge_count; d++) {
+            for(double m = 0.1; m < .999; m += 0.1) {
+              std::clock_t ts, te;
+              Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>());
 
-            ts = clock();
-            net.train_and_test(training_sets, testing_sets, target, trte_inter);
-            te = clock();
+              ts = clock();
+              net.train_and_test(training_sets, testing_sets, target, trte_inter, d);
+              te = clock();
 
-            float runtime = ((float)te - (float)ts);
-            double acc = net.test(testing_sets);
+              float runtime = ((float)te - (float)ts);
+              double acc = net.test(testing_sets);
+              if (acc > max_accuracy) {
+                max_accuracy = acc;
+                max_diverge = d;
+                max_dimensions = dimen_string;
+                max_momentum = m;
+              }
 
-            of << "," << acc;
-            std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
-                      << "], Momentum: " << m << ", Result: " << acc * 100 << "%, Training time: " << runtime << std::endl;
+              of << dimen_string << "," << d << "," << m << "," << acc << "," << runtime << std::endl;
+              std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
+                        << "], Momentum: " << m << ", Diverge Count: " << d << ", Result: "
+                        << acc * 100 << "%, Training time: " << runtime << std::endl;
+            }
           }
-          of << "\n";
         }
       }
+      std::cout << std::endl << std::endl;
+      std::cout << act_string << "Done Benchmarking, Best Setup: " << std::endl;
+      std::cout << "\tDimensions: [" << max_dimensions << "], Momentum: "
+                << max_momentum << ", Diverge Count: " << max_diverge << ", Accuracy: "
+                << max_accuracy << std::endl << std::endl << std::endl;
       of.close();
     }
   }
@@ -262,6 +288,8 @@ int main(int argc, char** argv) {
     double momentum = DEF_MOMENTUM;
     ActivationType act_type = Sigmoid;
     std::vector<int> dimensions;
+
+
 
     if(vm.count("momentum")) {
       momentum = vm["momentum"].as<double>();
@@ -308,7 +336,7 @@ int main(int argc, char** argv) {
 
     Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>());
 
-    net.train_and_test(training_sets, testing_sets, target, trte_inter);
+    net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
 
     double acc = net.test(testing_sets);
     std::cout << "Finished, Accuracy: " << acc * 100 << "%" << std::endl;

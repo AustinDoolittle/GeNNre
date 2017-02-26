@@ -209,10 +209,10 @@ void Net::rollback_weights() {
   del_weights = prev_del_weights;
 }
 
-void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval) {
-  int train_index = 0;
+void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_limit) {
   int test_index = 0;
-  double prev_err = .5;
+  double prev_val = .5;
+  int diverge_count = 0;
 
   int counter = 0;
   while(true) {
@@ -220,36 +220,37 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
       std::cout << "Training " << counter << std::endl;
     }
     double error_sum = 0;
+    double prev_err = .5;
+
     for(int i = 0; i < training_interval; i++) {
-      arma::vec res = forward(train_data[train_index].first);
-      if(this->verbose) {
-        std::cout << "Outputs/Expected: ";
-        for(int j = 0; j < res.n_rows; j++) {
-          std::cout << res(j) << "/" << train_data[train_index].second(j) << " ";
+      error_sum = 0;
+      for (int j = 0; j < train_data.size(); j++) {
+        arma::vec res = forward(train_data[j].first);
+        if(this->verbose) {
+          std::cout << "Outputs/Expected: ";
+          for(int k = 0; k < res.n_rows; k++) {
+            std::cout << res(k) << "/" << train_data[j].second(k) << " ";
+          }
+          std::cout << std::endl;
         }
-        std::cout << std::endl;
+        error_sum += get_error(train_data[j].second);
+
+        back_prop(train_data[j].second);
       }
-      double err = get_error(train_data[train_index].second);
-      error_sum += err;
 
+      double err_avg = error_sum / train_data.size();
 
-      back_prop(train_data[train_index].second);
-      train_index = (train_index + 1) % train_data.size();
-
-      //Change train rate at the end of an epoch
-      if(train_index == 0) {
-        if(err < prev_err) {
-          this->train_rate *= 1.05;
-        }
-        else if(err > (prev_err + ERR_CHANGE)) {
-          rollback_weights();
-          this->train_rate *= .5;
-        }
-        prev_err = err;
+      if(err_avg < prev_err) {
+        this->train_rate *= 1.05;
       }
+      else if(err_avg > (prev_err + ERR_CHANGE)) {
+        rollback_weights();
+        this->train_rate *= .5;
+      }
+
+      prev_err = err_avg;
       counter++;
     }
-    double train_avg = error_sum / training_interval;
 
     //test with test data
     if(this->verbose) {
@@ -265,12 +266,19 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     }
     else {
       if(this->verbose) {
-        std::cout << "\tTrain Error: " << train_avg << ", Validate Error: " << val_avg << ", Target: " << target << std::endl;
+        std::cout << "\tValidate Error: " << val_avg << ", Target: " << target << std::endl;
       }
       test_index = (test_index + 1) % test_data.size();
     }
-    if(counter > 2000000) {
-      break;
+    if (val_avg > prev_val) {
+      diverge_count += 1;
+      if (diverge_count >= diverge_limit) {
+        break;
+      }
     }
+    else {
+      diverge_count = 0;
+    }
+    prev_val = val_avg;
   }
 }
