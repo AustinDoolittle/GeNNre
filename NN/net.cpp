@@ -14,6 +14,7 @@ using namespace net;
 
 Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double momentum, bool verbose) {
   if(dimensions.size() == 0) {
+    std::cerr << "Invalid Dimensions" << std::endl;
     throw "Invalid dimensions";
   }
   srand(time(NULL));
@@ -23,6 +24,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   this->act_type = act_type;
   this->verbose = verbose;
   this->momentum = momentum;
+  this->relu_clipper = RELU_CLIPPER;
 
   switch(act_type) {
     default:
@@ -34,6 +36,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
       break;
     case TanH:
       this->activator = TANH_ACT;
+      break;
   }
 
   std::mt19937 engine;  // Mersenne twister random number engine
@@ -72,14 +75,9 @@ arma::vec Net::forward(const arma::vec inputs) {
   for (int i = 1; i < this->layers.size(); i++) {
     if(i != this->layers.size() - 1) {
       layers[i].rows(1, layers[i].n_rows - 1) = weights[i-1].t() * layers[i-1];
-
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
-      if(this->act_type == ReLU) {
-        layers[i].transform(SIG_ACT);
-        break;
-      }
     }
 
     layers[i].transform(this->activator);
@@ -91,24 +89,26 @@ arma::vec Net::forward(const arma::vec inputs) {
 
 void Net::back_prop(const arma::vec expected) {
   if(expected.n_rows != layers.back().n_rows) {
+    std::cerr << "Incorrect Parameter Size (back_prop)" << std::endl;
     throw "Incorrect parameter size";
   }
 
   arma::vec back(layers.back());
   arma::vec gradients = expected - back;
-  if(this->act_type == ReLU) {
-    gradients %= back % (1-back);
-  }
-  else {
-    gradients %= deriverator(back);
-  }
+  gradients %= deriverator(back);
 
   prev_del_weights = del_weights;
   for(int i = layers.size()-2; i >= 0; i--) {
+    //check if this is relu
+    if(this->act_type == ReLU) {
+      //it is, clip the gradients
+      gradients.transform(this->relu_clipper);
+    }
     del_weights[i] = (this->train_rate * (layers[i] * gradients.t())) + (this->momentum * del_weights[i]);
     weights[i] += del_weights[i];
     gradients = weights[i].submat(1,0,weights[i].n_rows-1, weights[i].n_cols-1) * gradients;
-    gradients %= this->deriverator(layers[i].rows(1, layers[i].n_rows-1));
+    arma::vec copy(layers[i].rows(1, layers[i].n_rows-1));
+    gradients %= this->deriverator(copy);
   }
 }
 
@@ -119,7 +119,7 @@ arma::vec Net::deriverator(arma::vec v) {
     case ReLU:
       return v.transform([](double d) {return d > 0 ? 1 : LEAKY_RELU_CONST;});
     case TanH:
-      return v.transform([](double d) {return 1 - std::pow((2.0 / (1.0 + std::exp(-2.0 * d))) - 1, 2);});
+      return 1 - arma::pow((2.0 / (1.0 + arma::exp(-2.0 * v))) - 1, 2);
     default:
       return v;
   }
@@ -130,6 +130,7 @@ double Net::get_error(const arma::vec expected){
   arma::vec outputs = layers.back();
 
   if(expected.n_rows != outputs.n_rows) {
+    std::cerr << "Incorrect parameter size (get_error)" << std::endl;
     throw "Incorrect parameter size";
   }
 
@@ -258,7 +259,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     double val_avg = get_error(test_data[test_index].second);
     if (val_avg <= target) {
       if(this->verbose) {
-        std::cout << "finished training: " << val_avg << std::endl;
+        std::cout << "Finished Training: " << val_avg << std::endl;
       }
       break;
     }

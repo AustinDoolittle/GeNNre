@@ -142,13 +142,12 @@ def load_keys(key_file):
         retval[int(splitline[0])] = splitline[1:]
     return retval
 
-def get_artist_data(all_track_data, genre_ids, is_multiclass=False):
+def get_artist_data(all_track_data, is_multiclass=False):
     is_running = True
 
     artist_ids = []
     [artist_ids.append(all_track_data[x]['artist_id']) for x in all_track_data if all_track_data[x]['artist_id'] not in artist_ids and all_track_data[x]['artist_id'] is not None]
 
-    artist_blacklist = []
     artist_genre_cache = {}
 
     while is_running:
@@ -161,17 +160,8 @@ def get_artist_data(all_track_data, genre_ids, is_multiclass=False):
 
         for artist in artists_info['artists']:
             artist_genres = clean_list(artist["genres"])
-            genre = get_genre(artist_genres, genre_ids, is_multiclass)
-
-            if genre != -1:
-                print_statement = "\t" + artist['name'] + " genre(s):"
-                for genre_id in genre:
-                    print_statement += " " + genre_ids[genre_id][0]
-                print print_statement
-                artist_genre_cache[artist['id']] = genre
-            else:
-                print "\t" + artist['name'] + ' genre not found, blacklisting...'
-                artist_blacklist.append(artist['id'])
+            if len(artist_genres) != 0:
+                artist_genre_cache[artist['id']] = artist_genres
 
         if len(artist_ids) > MAX_ID_COUNT:
             del artist_ids[:MAX_ID_COUNT]
@@ -179,10 +169,7 @@ def get_artist_data(all_track_data, genre_ids, is_multiclass=False):
     with open(ARTIST_GENRE_FILE, 'wb') as f:
         pickle.dump(artist_genre_cache, f, pickle.HIGHEST_PROTOCOL)
 
-    with open(ARTIST_BLACKLIST_FILE, 'wb') as f:
-        pickle.dump(artist_blacklist, f, pickle.HIGHEST_PROTOCOL)
-
-    return artist_genre_cache, artist_blacklist
+    return artist_genre_cache
 
 def get_track_features(all_track_data, feature_list):
     song_ids = all_track_data.keys()
@@ -202,17 +189,6 @@ def get_track_features(all_track_data, feature_list):
                 continue
             for feature_name in feature_list.values():
                 all_track_data[features['id']][feature_name[0]] = features[feature_name[0]]
-            # all_track_data[features['id']]['danceability'] = features['danceability']
-            # all_track_data[features['id']]['energy'] = features['energy']
-            # all_track_data[features['id']]['instrumentalness'] = features['instrumentalness']
-            # all_track_data[features['id']]['key'] = features['key']
-            # all_track_data[features['id']]['loudness'] = features['loudness']
-            # all_track_data[features['id']]['mode'] = features['mode']
-            # all_track_data[features['id']]['speechiness'] = features['speechiness']
-            # all_track_data[features['id']]['tempo'] = features['tempo']
-            # all_track_data[features['id']]['time_signature'] = features['time_signature']
-            # all_track_data[features['id']]['valence'] = features['valence']
-            # all_track_data[features['id']]['acousticness'] = features['acousticness']
 
         if(len(song_ids) > MAX_ID_COUNT):
             del song_ids[:MAX_ID_COUNT]
@@ -245,11 +221,11 @@ def write_to_file(all_track_data, train_filename, test_filename, feature_list):
     f_test.close()
     f_train.close()
 
-def bind_genres_to_tracks(all_track_data, genre_ids, artist_blacklist):
+def bind_genres_to_tracks(all_track_data, artist_genre_cache, genre_ids):
     genre_count = {id:0 for id in genre_ids}
 
     for track in all_track_data.keys():
-        if all_track_data[track]['artist_id'] is None or all_track_data[track]['artist_id'] in artist_blacklist or all_track_data[track]['artist_id'] not in artist_genre_cache:
+        if all_track_data[track]['artist_id'] is None or all_track_data[track]['artist_id'] not in artist_genre_cache:
             del all_track_data[track]
         else:
             all_track_data[track]['genre'] = artist_genre_cache[all_track_data[track]['artist_id']]
@@ -297,8 +273,14 @@ def normalize(all_track_data, features, newmin, newmax):
             maxval = feature_vars[feature]['max']
             all_track_data[track][feature] = (((all_track_data[track][feature] - minval) * (newmax - newmin)) / (maxval - minval)) + newmin
 
+def convert_artist_genres(artists, genre_ids, is_multiclass=False):
+    artist_clean = {}
+    for artist in artists:
+        genre_list = get_genre(artists[artist], genre_ids, is_multiclass)
+        if genre_list != -1:
+            artist_clean[artist] = genre_list
 
-
+    return artist_clean
 #Start of main method
 if __name__ == "__main__":
     #parse arguments
@@ -310,6 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", default=ALL_TRACK_DATA_FILE,  help='The .pkl file containing preretrieved data about the tracks')
     parser.add_argument("--outtrain", default=TEST_DATA_FILE,  help="The filename to write the train data out to")
     parser.add_argument("--outtest", default=TRAIN_DATA_FILE,  help="The filename to write the test data out to")
+    parser.add_argument("--normalize", default=False, action='store_true', help="normalize the data")
     parser.add_argument("--equalize", action='store_true', help="Enable equalizing of test data (all classes equally represented, only available if multiclass is not enabled)")
     args = parser.parse_args()
 
@@ -331,12 +314,12 @@ if __name__ == "__main__":
     try:
         with open(ARTIST_GENRE_FILE, 'rb') as f:
             artist_genre_cache = pickle.load(f)
-        with open(ARTIST_BLACKLIST_FILE, 'rb') as f:
-            artist_blacklist = pickle.load(f)
     except:
-        artist_genre_cache, artist_blacklist = get_artist_data(all_track_data, keys, args.multiclass)
+        artist_genre_cache = get_artist_data(all_track_data, args.multiclass)
 
-    genre_count = bind_genres_to_tracks(all_track_data, keys, artist_blacklist)
+    clean_artists = convert_artist_genres(artist_genre_cache, keys, args.multiclass)
+
+    genre_count = bind_genres_to_tracks(all_track_data, clean_artists, keys)
 
     print genre_count
 
@@ -347,7 +330,8 @@ if __name__ == "__main__":
 
     get_track_features(all_track_data, features)
 
-    normalize(all_track_data, features, -1, 1)
+    if args.normalize:
+        normalize(all_track_data, features, 0, 1)
 
     write_to_file(all_track_data, args.outtrain, args.outtest, features)
 

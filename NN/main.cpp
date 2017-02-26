@@ -14,7 +14,7 @@
 #define DEF_TARGET .2
 #define DEF_MOMENTUM .5
 #define DEF_INPUTS 11
-#define DEF_OUTPUTS 2
+#define DEF_OUTPUTS 4
 #define RELU_STAT_FILE "relu_stat.csv"
 #define SIG_STAT_FILE "sig_stat.csv"
 #define TANH_STAT_FILE "tanh_stat.csv";
@@ -35,13 +35,19 @@ bool file_exists(const std::string filename) {
 DataSet read_file(const std::string filename, const int input_count, const int class_count, const int max_outputs=1) {
   DataSet sets;
   std::ifstream ff;
-  ff.open(filename);
+  try {
+    ff.open(filename);
+  }
+  catch(std::exception e) {
+    std::cerr << "Could not open file " << filename << ", Error: " << e.what() << std::endl;
+    throw;
+  }
   std::string line;
   while(std::getline(ff, line)) {
     std::stringstream ss;
     ss << line;
     std::vector<double> inputs;
-    std::vector<double> outputs;
+    std::vector<double> outputs(class_count, 0);
     std::vector<int> expected_classes;
     double dtemp;
     int itemp;
@@ -60,13 +66,8 @@ DataSet read_file(const std::string filename, const int input_count, const int c
       }
     }
 
-    for(int i = 0; i < class_count; i++) {
-      if(std::find(expected_classes.begin(), expected_classes.end(), i) != expected_classes.end()) {
-        outputs.push_back(1);
-      }
-      else {
-        outputs.push_back(0);
-      }
+    for(int i = 0; i < expected_classes.size(); i++) {
+      outputs[expected_classes[i]] = 1;
     }
 
     sets.push_back(std::make_pair(arma::vec(inputs), arma::vec(outputs)));
@@ -82,16 +83,17 @@ int main(int argc, char** argv) {
     ("help", "Display all arguments and their action")
     ("testfile", po::value<std::string>(), "The file to pull test data from")
     ("trainfile", po::value<std::string>(), "The file to pull training sets from")
-    ("trainrate", po::value<double>(), "The weight to apply during back propogation")
     ("relu", po::bool_switch()->default_value(false), "Use relu activation instead")
     ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
     ("target", po::value<double>(), "The target error to hit while training")
     ("tanh", po::bool_switch()->default_value(false), "Use TanH Activation")
     ("verbose", po::bool_switch()->default_value(false), "Print out more information during training and testing")
     ("interval", po::value<int>(), "The amount of training iterations before testing for error")
+    ("inputcount", po::value<int>(), "The amount of inputs to the network (ONLY USED FOR BENCHMARKING)")
+    ("outputcount", po::value<int>(), "The amount of outputs from the network (ONLY USED FOR BENCHMARKING)")
     ("momentum", po::value<double>(), "The value for momentum (0 <= m <= 1)")
     ("benchmark", po::bool_switch()->default_value(false), "Test the different configurations and store the results in a CSV")
-    ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes)");
+    ("dimensions", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -155,13 +157,6 @@ int main(int argc, char** argv) {
     while (true);
   }
 
-  DataSet training_sets = read_file(trainfile, DEF_INPUTS, DEF_OUTPUTS);
-  //shuffle contents
-  std::random_shuffle(training_sets.begin(), training_sets.end());
-
-  DataSet testing_sets = read_file(testfile, DEF_INPUTS, DEF_OUTPUTS);
-  //shuffle contents
-  std::random_shuffle(testing_sets.begin(), testing_sets.end());
 
   if(vm.count("target")) {
     target = vm["target"].as<double>();
@@ -176,6 +171,35 @@ int main(int argc, char** argv) {
   }
 
   if(vm["benchmark"].as<bool>()) {
+    int inputcount = DEF_INPUTS;
+    int outputcount = DEF_OUTPUTS;
+
+    if (vm.count("inputcount")) {
+      inputcount = vm["inputcount"].as<int>();
+    }
+
+    if (vm.count("outputcount")) {
+      outputcount = vm["outputcount"].as<int>();
+    }
+
+    if(vm["verbose"].as<bool>()) {
+      std::cout << "Reading training file" << std::endl;
+    }
+    DataSet training_sets = read_file(trainfile, inputcount, outputcount);
+    //shuffle contents
+    std::random_shuffle(training_sets.begin(), training_sets.end());
+    if(vm["verbose"].as<bool>()) {
+      std::cout << "Done Reading training file" << std::endl;
+      std::cout << "Reading Testing file" << std::endl;
+    }
+    DataSet testing_sets = read_file(testfile, inputcount, outputcount);
+    //shuffle contents
+    std::random_shuffle(testing_sets.begin(), testing_sets.end());
+
+    if(vm["verbose"].as<bool>()) {
+      std::cout << "Done Reading testing file" << std::endl;
+    }
+
     std::cout << "Benchmarking..." << std::endl;
     for(int i = 0; i < 3; i++) {
       ActivationType act;
@@ -200,18 +224,18 @@ int main(int argc, char** argv) {
       }
       std::ofstream of(filename);
       of << ",0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9\n";
-      for(int h1 = 1; h1 < DEF_INPUTS + 2; h1++) {
-        for(int h2 = 0; h2 < DEF_INPUTS + 2; h2++) {
+      for(int h1 = outputcount; h1 < inputcount + 2; h1++) {
+        for(int h2 = 0; h2 < inputcount + 2; h2++) {
           std::vector<int> dimensions;
-          std::string dimen_string = std::to_string(DEF_INPUTS) + " " + std::to_string(h1) + " ";
-          dimensions.push_back(DEF_INPUTS);
+          std::string dimen_string = std::to_string(inputcount) + " " + std::to_string(h1) + " ";
+          dimensions.push_back(inputcount);
           dimensions.push_back(h1);
           if(h2 != 0) {
             dimensions.push_back(h2);
             dimen_string += std::to_string(h2) + " ";
           }
-          dimensions.push_back(DEF_OUTPUTS);
-          dimen_string += std::to_string(DEF_OUTPUTS);
+          dimensions.push_back(outputcount);
+          dimen_string += std::to_string(outputcount);
           of << dimen_string;
           for(double m = 0.1; m < .999; m += 0.1) {
             std::clock_t ts, te;
@@ -251,8 +275,16 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
+    //shuffle contents
+    std::random_shuffle(training_sets.begin(), training_sets.end());
+
+    DataSet testing_sets = read_file(testfile, dimensions[0], dimensions.back());
+    //shuffle contents
+    std::random_shuffle(testing_sets.begin(), testing_sets.end());
+
     if(vm["relu"].as<bool>() && vm["tanh"].as<bool>()) {
-      std::cerr << "You cannot select both ReLU and Softplus as your activation type" << std::endl;
+      std::cerr << "You cannot select both ReLU and TanH as your activation type" << std::endl;
       exit(2);
     }
     else if (vm["relu"].as<bool>()) {
