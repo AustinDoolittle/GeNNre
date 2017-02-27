@@ -216,20 +216,27 @@ int main(int argc, char** argv) {
       ActivationType act;
       std::string act_string = "";
       std::string filename = "";
-      switch(i) {
+      std::string connector;
+      if (vm["dropout"].as<bool>()) {
+        connector = "_D_";
+      }
+      else {
+        connector = "_";
+      }
+       switch(i) {
         case 0:
-          act = Sigmoid;
-          filename = trainfile_noext + "_" + SIG_STAT_FILE;
-          act_string = "Sigmoid";
-          break;
-        case 1:
           act = ReLU;
-          filename = trainfile_noext + "_" + RELU_STAT_FILE;
+          filename = trainfile_noext + connector + RELU_STAT_FILE;
           act_string = "ReLU";
           break;
+        case 1:
+        act = Sigmoid;
+        filename = trainfile_noext + connector + SIG_STAT_FILE;
+        act_string = "Sigmoid";
+        break;
         case 2:
           act = TanH;
-          filename = trainfile_noext + "_" + TANH_STAT_FILE;
+          filename = trainfile_noext + connector + TANH_STAT_FILE;
           act_string = "TanH";
           break;
       }
@@ -239,8 +246,8 @@ int main(int argc, char** argv) {
       int max_diverge = 0;
       double max_momentum = 0;
       of << "Dimensions,Diverge Count,Momentum,Accuracy,Testing Time\n";
-      for(int h1 = 1; h1 < inputcount + 2; h1++) {
-        for(int h2 = 0; h2 < inputcount + 2; h2++) {
+      for(int h1 = inputcount; h1 >0; h1--) {
+        for(int h2 = inputcount; h2 >= 0; h2--) {
           std::vector<int> dimensions;
           std::string dimen_string = std::to_string(inputcount) + " " + std::to_string(h1) + " ";
           dimensions.push_back(inputcount);
@@ -269,16 +276,16 @@ int main(int argc, char** argv) {
                 max_momentum = m;
               }
 
-              of << dimen_string << "," << d << "," << m << "," << acc << "," << runtime << std::endl;
+              of << dimen_string << "," << d << "," << m  << "," << acc << "," << runtime << std::endl;
               std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
                         << "], Momentum: " << m << ", Diverge Count: " << d << ", Result: "
-                        << acc * 100 << "%, Training time: " << runtime << std::endl;
+                        << acc * 100 << "%, Training time: " << (runtime/CLOCKS_PER_SEC) << std::endl;
             }
           }
         }
       }
       std::cout << std::endl << std::endl;
-      std::cout << act_string << "Done Benchmarking, Best Setup: " << std::endl;
+      std::cout << act_string << " Done Benchmarking, Best Setup: " << std::endl;
       std::cout << "\tDimensions: [" << max_dimensions << "], Momentum: "
                 << max_momentum << ", Diverge Count: " << max_diverge << ", Accuracy: "
                 << max_accuracy << std::endl << std::endl << std::endl;

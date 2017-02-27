@@ -260,6 +260,8 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
   int test_index = 0;
   double prev_val = .5;
   int diverge_count = 0;
+  std::clock_t ts, te;
+  ts = clock();
 
   int counter = 0;
   while(true) {
@@ -327,5 +329,13 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
       diverge_count = 0;
     }
     prev_val = val_avg;
+
+    te = clock();
+
+    if (((float)te - (float)ts) > (CLOCKS_PER_SEC * TIMEOUT_LENGTH)) {
+      if(this->verbose) {
+        std::cout << "~~ TIMEOUT ~~" << std::endl;
+      }
+    }
   }
 }

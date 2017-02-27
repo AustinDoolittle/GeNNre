@@ -34,6 +34,5 @@
 # my stuff
 *.cache-*
 *.pkl
-*.dat
 *.key
 *.csv
