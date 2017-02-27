@@ -282,7 +282,12 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
           }
           std::cout << std::endl;
         }
-        error_sum += get_error(train_data[j].second);
+        double err = get_error(train_data[j].second);
+        if(this->verbose) {
+          std::cout << "\tError: " << err << std::endl;
+        }
+
+        error_sum += err;
 
         back_prop(train_data[j].second);
       }
@@ -335,6 +340,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     if (((float)te - (float)ts) > (CLOCKS_PER_SEC * TIMEOUT_LENGTH)) {
       if(this->verbose) {
         std::cout << "~~ TIMEOUT ~~" << std::endl;
+        break;
       }
     }
   }

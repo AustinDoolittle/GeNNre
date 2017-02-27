@@ -18,7 +18,8 @@
 #define DEF_OUTPUTS 4
 #define RELU_STAT_FILE "relu.csv"
 #define SIG_STAT_FILE "sig.csv"
-#define TANH_STAT_FILE "tanh.csv";
+#define TANH_STAT_FILE "tanh.csv"
+#define ANALYTICS_DIR "Analytics/"
 
 namespace po = boost::program_options;
 using namespace net;
@@ -226,17 +227,17 @@ int main(int argc, char** argv) {
        switch(i) {
         case 0:
           act = ReLU;
-          filename = trainfile_noext + connector + RELU_STAT_FILE;
+          filename = ANALYTICS_DIR + trainfile_noext + connector + RELU_STAT_FILE;
           act_string = "ReLU";
           break;
         case 1:
         act = Sigmoid;
-        filename = trainfile_noext + connector + SIG_STAT_FILE;
+        filename = ANALYTICS_DIR + trainfile_noext + connector + SIG_STAT_FILE;
         act_string = "Sigmoid";
         break;
         case 2:
           act = TanH;
-          filename = trainfile_noext + connector + TANH_STAT_FILE;
+          filename = ANALYTICS_DIR + trainfile_noext + connector + TANH_STAT_FILE;
           act_string = "TanH";
           break;
       }
