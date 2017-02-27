@@ -12,7 +12,7 @@ using namespace net;
 
 
 
-Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double momentum, bool verbose) {
+Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationType act_type, double momentum, bool verbose, bool is_dropout) {
   if(dimensions.size() == 0) {
     std::cerr << "Invalid Dimensions" << std::endl;
     throw "Invalid dimensions";
@@ -24,6 +24,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
   this->act_type = act_type;
   this->verbose = verbose;
   this->momentum = momentum;
+  this->dropout = is_dropout;
   this->relu_clipper = RELU_CLIPPER;
 
   switch(act_type) {
@@ -60,27 +61,73 @@ Net::~Net() {
 
 }
 
+int Net::random_from_prob(double prob) {
+  double rndDouble = (double)rand() / RAND_MAX;
+  return rndDouble < prob;
+}
+
 void Net::load_inputs(const arma::vec vector) {
   if(vector.n_rows != input_count) {
     std::cerr << "Parameter size mismatch" << std::endl;
     throw;
   }
+
   this->layers[0].rows(1,layers[0].n_rows - 1) = vector;
 }
 
-arma::vec Net::forward(const arma::vec inputs) {
+arma::vec Net::forward_train(const arma::vec inputs) {
 
   load_inputs(inputs);
+
+  if (this->dropout) {
+    this->layers[0].rows(1,layers[0].n_rows - 1).transform(DROPOUT_INP_ALG);
+  }
 
   for (int i = 1; i < this->layers.size(); i++) {
     if(i != this->layers.size() - 1) {
       layers[i].rows(1, layers[i].n_rows - 1) = weights[i-1].t() * layers[i-1];
+      if(this->dropout)  {
+        layers[i].rows(1, layers[i].n_rows - 1).transform(DROPOUT_ALG);
+      }
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
+      if(this->dropout)  {
+        layers[i].transform(DROPOUT_ALG);
+      }
     }
 
     layers[i].transform(this->activator);
+
+  }
+
+  return layers.back();
+}
+
+arma::vec Net::forward_test(const arma::vec inputs) {
+
+  load_inputs(inputs);
+
+  if (this->dropout) {
+    this->layers[0].rows(1,layers[0].n_rows - 1).transform(DROPOUT_INP_FORWARD_ALG);
+  }
+
+  for (int i = 1; i < this->layers.size(); i++) {
+    if(i != this->layers.size() - 1) {
+      layers[i].rows(1, layers[i].n_rows - 1) = weights[i-1].t() * layers[i-1];
+      if(this->dropout)  {
+        layers[i].rows(1, layers[i].n_rows - 1).transform(DROPOUT_FORWARD_ALG);
+      }
+    }
+    else {
+      layers[i] = weights[i-1].t() * layers[i-1];
+      if(this->dropout)  {
+        layers[i].transform(DROPOUT_FORWARD_ALG);
+      }
+    }
+
+    layers[i].transform(this->activator);
+
   }
 
   return layers.back();
@@ -159,7 +206,7 @@ double Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
   for(int i = 0; i < total_count; i++) {
-    arma::vec result = forward(s[i].first);
+    arma::vec result = forward_test(s[i].first);
     if(this->verbose) {
       std::cout << "Testing: " << i << std::endl;
       std::cout << "\tOutput/Expected: ";
@@ -225,7 +272,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     for(int i = 0; i < training_interval; i++) {
       error_sum = 0;
       for (int j = 0; j < train_data.size(); j++) {
-        arma::vec res = forward(train_data[j].first);
+        arma::vec res = forward_train(train_data[j].first);
         if(this->verbose) {
           std::cout << "Outputs/Expected: ";
           for(int k = 0; k < res.n_rows; k++) {
@@ -256,7 +303,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     if(this->verbose) {
       std::cout << "Testing..." << std::endl;
     }
-    forward(test_data[test_index].first);
+    forward_test(test_data[test_index].first);
     double val_avg = get_error(test_data[test_index].second);
     if (val_avg <= target) {
       if(this->verbose) {

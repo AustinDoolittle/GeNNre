@@ -93,6 +93,7 @@ int main(int argc, char** argv) {
     ("inputcount", po::value<int>(), "The amount of inputs to the network (ONLY USED FOR BENCHMARKING)")
     ("outputcount", po::value<int>(), "The amount of outputs from the network (ONLY USED FOR BENCHMARKING)")
     ("momentum,m", po::value<double>(), "The value for momentum (0 <= m <= 1)")
+    ("dropout", po::bool_switch()->default_value(false), "Use dropout in this neural net")
     ("diverge", po::value<int>(), "The count of consecutive divergence in the validation set before stopping training (also the upper bound in benchmarking)")
     ("benchmark", po::bool_switch()->default_value(false), "Test the different configurations and store the results in a CSV")
     ("dimensions,d", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
@@ -253,7 +254,7 @@ int main(int argc, char** argv) {
           for (int d = 1; d <= diverge_count; d++) {
             for(double m = 0.1; m < .999; m += 0.1) {
               std::clock_t ts, te;
-              Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>());
+              Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
 
               ts = clock();
               net.train_and_test(training_sets, testing_sets, target, trte_inter, d);
@@ -334,7 +335,7 @@ int main(int argc, char** argv) {
     std::cout << "Test File: " << testfile << std::endl;
     std::cout << std::endl << std::endl;
 
-    Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>());
+    Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
 
     net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
 
