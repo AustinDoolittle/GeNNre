@@ -14,7 +14,8 @@
 #define DEF_TRAIN_RATE 0.5
 #define DEF_DROPOUT 0.5
 #define DEF_DROPOUT_INP 0.9
-#define TIMEOUT_LENGTH 600
+#define TIMEOUT_LENGTH 18000
+#define DEF_VAL_INTERVALS 5
 
 
 #define SIG_ACT [](double val) {return 1.0/(1.0 + std::exp(-val));}

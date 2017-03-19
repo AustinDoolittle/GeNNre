@@ -36,3 +36,5 @@
 *.pkl
 *.key
 *.csv
+*.png
+*.sublime*

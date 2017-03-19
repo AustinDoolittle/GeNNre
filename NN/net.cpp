@@ -42,7 +42,7 @@ Net::Net(std::vector<int> dimensions, ClassificationType class_type, ActivationT
 
   std::mt19937 engine;  // Mersenne twister random number engine
 
-  std::uniform_real_distribution<double> distr(-0.1, 0.1);
+  std::uniform_real_distribution<double> distr(-0.01, 0.01);
 
   for(int i = 0; i < dimensions.size(); i++) {
     if(i != dimensions.size()-1) {
@@ -264,6 +264,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
   ts = clock();
 
   int counter = 0;
+  int val_counter = 1;
   while(true) {
     if(this->verbose) {
       std::cout << "Training " << counter << std::endl;
@@ -310,19 +311,23 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     if(this->verbose) {
       std::cout << "Testing..." << std::endl;
     }
-    forward_test(test_data[test_index].first);
-    double val_avg = get_error(test_data[test_index].second);
+
+    double val_avg = 0;
+    for(int v = 0; v < DEF_VAL_INTERVALS; v++) {
+      forward_test(test_data[test_index].first);
+      val_avg = get_error(test_data[test_index].second);
+      test_index = (test_index + 1) % test_data.size();
+    }
+    val_avg /= DEF_VAL_INTERVALS;
+
     if (val_avg <= target) {
-      if(this->verbose) {
-        std::cout << "Finished Training: " << val_avg << std::endl;
-      }
+      std::cout << "Finished Training: " << val_avg << std::endl;
       break;
     }
     else {
-      if(this->verbose) {
-        std::cout << "\tValidate Error: " << val_avg << ", Target: " << target << std::endl;
-      }
-      test_index = (test_index + 1) % test_data.size();
+      std::cout << "\tValidate " << val_counter  << ", Error: " << val_avg << ", Target: " << target << std::endl;
+      
+      val_counter++;
     }
     if (val_avg > prev_val) {
       diverge_count += 1;
@@ -338,10 +343,8 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     te = clock();
 
     if (((float)te - (float)ts) > (CLOCKS_PER_SEC * TIMEOUT_LENGTH)) {
-      if(this->verbose) {
-        std::cout << "~~ TIMEOUT ~~" << std::endl;
-        break;
-      }
+      std::cout << "~~ TIMEOUT ~~" << std::endl;
+      break;
     }
   }
 }

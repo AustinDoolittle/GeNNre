@@ -14,16 +14,16 @@ MAX_ID_COUNT = 50
 DICT_FILE = 'dict_large.pkl'
 ARTIST_GENRE_FILE = 'artist_genre.pkl'
 ARTIST_BLACKLIST_FILE = 'artist_blacklist.pkl'
-TEST_DATA_FILE = 'NN/test_data.dat'
-TRAIN_DATA_FILE = 'NN/train_data.dat'
+TEST_DATA_FILE = 'NN/Datasets/test_data.dat'
+TRAIN_DATA_FILE = 'NN/Datasets/train_data.dat'
 ALL_TRACK_DATA_FILE = 'all_track_data.pkl'
 PLAYLIST_ID = '3ak5YjddmeNcRrnTpypzv9'
 APP_CLIENT_ID = "97fad7e7f7f44d6daabac8473b12809e"
 APP_SECRET_KEY = "840212a600484c27959867cbc92a9643"
 REDIRECT_URI = "http://google.com"
 
-DEF_KEY_FILE = "NN/genres.key"
-DEF_FEAT_FILE = "NN/features.key"
+DEF_KEY_FILE = "NN/Keys/genres.key"
+DEF_FEAT_FILE = "NN/Keys/features.key"
 
 
 #removes all non alpha characters from the list

@@ -7,7 +7,7 @@
 #include <tuple>
 #include <time.h>
 #include <algorithm>
-#include <boost/program_options.hpp>
+#include "boost/program_options.hpp"
 #include "net.hpp"
 
 #define DEF_TRTE_INTER 10
@@ -244,9 +244,8 @@ int main(int argc, char** argv) {
       std::ofstream of(filename);
       double max_accuracy = 0;
       std::string max_dimensions = "";
-      int max_diverge = 0;
       double max_momentum = 0;
-      of << "Dimensions,Diverge Count,Momentum,Accuracy,Testing Time\n";
+      of << "Dimensions,Momentum,Accuracy,Testing Time\n";
       for(int h1 = inputcount; h1 >0; h1--) {
         for(int h2 = inputcount; h2 >= 0; h2--) {
           std::vector<int> dimensions;
@@ -259,36 +258,34 @@ int main(int argc, char** argv) {
           }
           dimensions.push_back(outputcount);
           dimen_string += std::to_string(outputcount);
-          for (int d = 1; d <= diverge_count; d++) {
-            for(double m = 0.1; m < .999; m += 0.1) {
-              std::clock_t ts, te;
-              Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
+          for(double m = 0.1; m < .999; m += 0.1) {
+            std::clock_t ts, te;
+            Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
 
-              ts = clock();
-              net.train_and_test(training_sets, testing_sets, target, trte_inter, d);
-              te = clock();
+            ts = clock();
+            net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
+            te = clock();
 
-              float runtime = ((float)te - (float)ts);
-              double acc = net.test(testing_sets);
-              if (acc > max_accuracy) {
-                max_accuracy = acc;
-                max_diverge = d;
-                max_dimensions = dimen_string;
-                max_momentum = m;
-              }
-
-              of << dimen_string << "," << d << "," << m  << "," << acc << "," << runtime << std::endl;
-              std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
-                        << "], Momentum: " << m << ", Diverge Count: " << d << ", Result: "
-                        << acc * 100 << "%, Training time: " << (runtime/CLOCKS_PER_SEC) << std::endl;
+            float runtime = ((float)te - (float)ts);
+            double acc = net.test(testing_sets);
+            if (acc > max_accuracy) {
+              max_accuracy = acc;
+              max_dimensions = dimen_string;
+              max_momentum = m;
             }
+
+            of << dimen_string << "," << m  << "," << acc << "," << runtime << std::endl;
+            std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
+                      << "], Momentum: " << m << ", Result: "
+                      << acc * 100 << "%, Training time: " << (runtime/CLOCKS_PER_SEC) << std::endl;
           }
+          
         }
       }
       std::cout << std::endl << std::endl;
       std::cout << act_string << " Done Benchmarking, Best Setup: " << std::endl;
       std::cout << "\tDimensions: [" << max_dimensions << "], Momentum: "
-                << max_momentum << ", Diverge Count: " << max_diverge << ", Accuracy: "
+                << max_momentum << ", Accuracy: "
                 << max_accuracy << std::endl << std::endl << std::endl;
       of.close();
     }

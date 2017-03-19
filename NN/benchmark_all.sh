@@ -16,10 +16,10 @@ flags="--target 0.001  --interval 10 --benchmark --inputcount 11"
 ./NN.out --trainfile $dataset_dir/5train_norm_data.dat --testfile $dataset_dir/5test_norm_data.dat $flags --outputcount 5 --diverge 4 --dropout 
 
 #run 12 class benchmark, no dropout
-./NN.out --trainfile $dataset_dir/12train_norm_data.dat --testfile $dataset_dir/12test_norm_data.dat $flags --outputcount 12 --diverge 4 
+./NN.out --trainfile $dataset_dir/9train_norm_data.dat --testfile $dataset_dir/9test_norm_data.dat $flags --outputcount 9 --diverge 4 
 
 #run 12 class benchmarck, dropout
-./NN.out --trainfile $dataset_dir/12train_norm_data.dat --testfile $dataset_dir/12test_norm_data.dat $flags --outputcount 12 --diverge 4 --dropout 
+./NN.out --trainfile $dataset_dir/9train_norm_data.dat --testfile $dataset_dir/9test_norm_data.dat $flags --outputcount 9 --diverge 4 --dropout 
 
 wait
 
