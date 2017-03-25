@@ -15,6 +15,7 @@
 #define DEF_MOMENTUM .5
 #define DIVERGE_COUNT 3
 #define DEF_INPUTS 11
+#define DEF_TIMEOUT 450
 #define DEF_OUTPUTS 4
 #define RELU_STAT_FILE "relu.csv"
 #define SIG_STAT_FILE "sig.csv"
@@ -122,9 +123,11 @@ int main(int argc, char** argv) {
     ("outputcount", po::value<int>(), "The amount of outputs from the network (ONLY USED FOR BENCHMARKING)")
     ("momentum,m", po::value<double>(), "The value for momentum (0 <= m <= 1)")
     ("dropout", po::bool_switch()->default_value(false), "Use dropout in this neural net")
+    ("timeout", po::value<int>(), "The timeout in seconds of training")
     ("diverge", po::value<int>(), "The count of consecutive divergence in the validation set before stopping training (also the upper bound in benchmarking)")
     ("benchmark", po::bool_switch()->default_value(false), "Test the different configurations and store the results in a CSV")
     ("dimensions,d", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
+
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -146,6 +149,7 @@ int main(int argc, char** argv) {
   int inputcount = DEF_INPUTS;
   int outputcount = DEF_OUTPUTS;
   int multicount = 1;
+  int timeout = DEF_TIMEOUT;
 
 
   if(vm.count("multicount")) {
@@ -162,6 +166,10 @@ int main(int argc, char** argv) {
 
   if(vm.count("diverge")) {
     diverge_count = vm["diverge"].as<int>();
+  }
+
+  if(vm.count("timeout")) {
+    timeout = vm["timeout"].as<int>();
   }
 
   //retrieve necessary parameters from args or user input
@@ -244,7 +252,7 @@ int main(int argc, char** argv) {
 
     size_t extension_index = trainfile.find_last_of(".");
     size_t path_index = trainfile.find_last_of("/") + 1;
-    std::string trainfile_noext = trainfile.substr(path_index, extension_index);
+    std::string trainfile_noext = trainfile.substr(path_index, extension_index - path_index);
 
     std::cout << "Benchmarking..." << std::endl;
     for(int i = 0; i < 3; i++) {
@@ -298,7 +306,7 @@ int main(int argc, char** argv) {
             Net net(dimensions, class_type, act, m, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
 
             ts = clock();
-            net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
+            net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count, timeout);
             te = clock();
 
             float runtime = ((float)te - (float)ts);
@@ -381,7 +389,7 @@ int main(int argc, char** argv) {
       std::vector<Net*> nn_vec(outputcount);
       for (int i = 0; i < nn_vec.size(); i++) {
         nn_vec[i] = new Net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
-        nn_vec[i]->train_and_test(training_sets_vec[i], testing_sets_vec[i], target, trte_inter, diverge_count);
+        nn_vec[i]->train_and_test(training_sets_vec[i], testing_sets_vec[i], target, trte_inter, diverge_count, timeout);
         double correct = 0;
         for(int j = 0; j < testing_sets_vec[i].size(); j++) {
           if(!nn_vec[i]->test_one(testing_sets_vec[i][j])) {
@@ -442,7 +450,7 @@ int main(int argc, char** argv) {
       if(vm["verbose"].as<bool>()) {
         std::cerr << "Starting Training..." << std::endl;
       }
-      net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
+      net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count, timeout);
 
       double acc = net.test(testing_sets);
       std::cout << "Finished, Accuracy: " << acc * 100 << "%" << std::endl;

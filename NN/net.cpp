@@ -261,7 +261,7 @@ void Net::rollback_weights() {
   this->del_weights = this->prev_del_weights;
 }
 
-void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_limit) {
+void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_limit, int timeout) {
   int test_index = 0;
   double prev_diff = 0;
   int diverge_count = 0;
@@ -298,7 +298,6 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
         error_sum += err;
 
         back_prop(train_data[j].second);
-
       }
 
       tr_avg = error_sum / train_data.size();
@@ -357,7 +356,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
 
     te = clock();
 
-    if (((float)te - (float)ts) > ((float)CLOCKS_PER_SEC * (float)TIMEOUT_LENGTH)) {
+    if (((float)te - (float)ts) > ((float)CLOCKS_PER_SEC * (float)timeout)) {
       std::cout << "~~ TIMEOUT ~~" << std::endl;
       break;
     }

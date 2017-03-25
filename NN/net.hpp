@@ -14,7 +14,6 @@
 #define DEF_TRAIN_RATE 0.5
 #define DEF_DROPOUT 0.5
 #define DEF_DROPOUT_INP 0.8
-#define TIMEOUT_LENGTH 900
 #define DEF_VAL_INTERVALS 5
 
 
@@ -51,7 +50,7 @@ namespace net {
     double get_error(const arma::vec expected);
     bool test_one(const std::pair<arma::vec,arma::vec>);
     double test(DataSet s);
-    void train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_count);
+    void train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_count, int timeout);
     std::string to_s();
   private:
     ActivationType act_type;
