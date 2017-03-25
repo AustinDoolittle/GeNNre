@@ -66,13 +66,13 @@ int Net::random_from_prob(double prob) {
   return rndDouble < prob;
 }
 
-void Net::load_inputs(const arma::vec vector) {
-  if(vector.n_rows != input_count) {
-    std::cerr << "Parameter size mismatch" << std::endl;
+void Net::load_inputs(const arma::vec vec) {
+  if(vec.n_rows != input_count) {
+    std::cerr << "Parameter size mismatch, was: " << vec.n_rows << ", expected: " << input_count << std::endl;
     throw;
   }
 
-  this->layers[0].rows(1,layers[0].n_rows - 1) = vector;
+  this->layers[0].rows(1,layers[0].n_rows - 1) = vec;
 }
 
 arma::vec Net::forward_train(const arma::vec inputs) {
@@ -92,9 +92,6 @@ arma::vec Net::forward_train(const arma::vec inputs) {
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
-      if(this->dropout)  {
-        layers[i].transform(DROPOUT_ALG);
-      }
     }
 
     layers[i].transform(this->activator);
@@ -121,9 +118,6 @@ arma::vec Net::forward_test(const arma::vec inputs) {
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
-      if(this->dropout)  {
-        layers[i].transform(DROPOUT_FORWARD_ALG);
-      }
     }
 
     layers[i].transform(this->activator);
@@ -144,14 +138,15 @@ void Net::back_prop(const arma::vec expected) {
   arma::vec gradients = expected - back;
   gradients %= deriverator(back);
 
-  prev_del_weights = del_weights;
   for(int i = layers.size()-2; i >= 0; i--) {
     //check if this is relu
     if(this->act_type == ReLU) {
       //it is, clip the gradients
       gradients.transform(this->relu_clipper);
     }
+    
     del_weights[i] = (this->train_rate * (layers[i] * gradients.t())) + (this->momentum * del_weights[i]);
+
     weights[i] += del_weights[i];
     gradients = weights[i].submat(1,0,weights[i].n_rows-1, weights[i].n_cols-1) * gradients;
     arma::vec copy(layers[i].rows(1, layers[i].n_rows-1));
@@ -202,44 +197,56 @@ std::string Net::to_s() {
   return retval;
 }
 
+bool Net::test_one(std::pair<arma::vec,arma::vec> s) {
+
+  arma::vec result = forward_test(s.first);
+  if(this->verbose) {
+    std::cout << "\tOutput/Expected: ";
+    for(int r = 0; r < result.n_rows; r++) {
+      std::cout << result(r) << "/" << s.second(r) << " ";
+    }
+    std::cout << std::endl;
+  }
+    
+  int max_index = 0;
+  int expected_index = 0;
+  for(int j = 1; j < result.size(); j++) {
+    if (result(j) > result(max_index)) {
+      max_index = j;
+    }
+    if(s.second(j) > s.second(expected_index)) {
+      expected_index = j;
+    }
+  }
+  if(max_index == expected_index) {
+    return true;
+  }
+  else {
+    return false;
+  }
+}
+
 double Net::test(DataSet s) {
   int total_count = s.size();
   int correct = 0;
   for(int i = 0; i < total_count; i++) {
-    arma::vec result = forward_test(s[i].first);
     if(this->verbose) {
       std::cout << "Testing: " << i << std::endl;
-      std::cout << "\tOutput/Expected: ";
-      for(int r = 0; r < result.n_rows; r++) {
-        std::cout << result(r) << "/" << s[i].second(r) << " ";
-      }
-      std::cout << std::endl;
     }
-    if (this->class_type == Single) {
-      int max_index = 0;
-      int expected_index = 0;
-      for(int j = 1; j < result.size(); j++) {
-        if (result(j) > result(max_index)) {
-          max_index = j;
-        }
-        if(s[i].second(j) > s[i].second(expected_index)) {
-          expected_index = j;
-        }
-      }
-      if(max_index == expected_index) {
-        correct++;
-        if(this->verbose) {
-          std::cout << "\tCorrect\t" << correct << "/" << (i + 1) << std::endl;
-        }
-      }
-      else {
-        if(this->verbose) {
-          std::cout << "\tWrong\t" << correct << "/" << (i + 1) << std::endl;
-        }
+
+    if(test_one(s[i])) {
+      correct++;
+      if(this->verbose) {
+        std::cout << "Correct: ";
       }
     }
-    else if(this->class_type == Multi) {
-      //TODO: implement
+    else {
+      if(this->verbose) {
+        std::cout << "Incorrect: ";
+      }
+    } 
+    if(this->verbose) {
+      std::cout << correct << "/" << i + 1 << std::endl;
     }
   }
   if(this->verbose) {
@@ -250,30 +257,30 @@ double Net::test(DataSet s) {
 }
 
 void Net::rollback_weights() {
-  for(int i = 0; i < weights.size(); i++) {
-    weights[i] -= del_weights[i];
-  }
-  del_weights = prev_del_weights;
+  this->weights = this->prev_weights;
+  this->del_weights = this->prev_del_weights;
 }
 
 void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_limit) {
   int test_index = 0;
-  double prev_val = .5;
+  double prev_diff = 0;
   int diverge_count = 0;
   std::clock_t ts, te;
   ts = clock();
 
   int counter = 0;
   int val_counter = 1;
+  this->prev_weights = weights;
+  this->prev_del_weights = del_weights;
   while(true) {
     if(this->verbose) {
       std::cout << "Training " << counter << std::endl;
     }
-    double error_sum = 0;
+    double tr_avg = 0;
     double prev_err = .5;
 
     for(int i = 0; i < training_interval; i++) {
-      error_sum = 0;
+      double error_sum = 0;
       for (int j = 0; j < train_data.size(); j++) {
         arma::vec res = forward_train(train_data[j].first);
         if(this->verbose) {
@@ -291,19 +298,22 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
         error_sum += err;
 
         back_prop(train_data[j].second);
+
       }
 
-      double err_avg = error_sum / train_data.size();
+      tr_avg = error_sum / train_data.size();
 
-      if(err_avg < prev_err) {
+      if(tr_avg < prev_err) {
         this->train_rate *= 1.05;
+        this->prev_weights = this->weights;    
+        this->prev_del_weights = this->del_weights;
       }
-      else if(err_avg > (prev_err + ERR_CHANGE)) {
+      else if(tr_avg > (prev_err + ERR_CHANGE)) {
         rollback_weights();
         this->train_rate *= .5;
       }
 
-      prev_err = err_avg;
+      prev_err = tr_avg;
       counter++;
     }
 
@@ -320,29 +330,34 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     }
     val_avg /= DEF_VAL_INTERVALS;
 
+    double diff = tr_avg - val_avg;
+
+
     if (val_avg <= target) {
       std::cout << "Finished Training: " << val_avg << std::endl;
       break;
     }
     else {
-      std::cout << "\tValidate " << val_counter  << ", Error: " << val_avg << ", Target: " << target << std::endl;
+      std::cout << "\tValidate " << val_counter  << ", Error: " << val_avg << ", Diff: " << diff << ", Target: " << target << std::endl;
       
       val_counter++;
     }
-    if (val_avg > prev_val) {
+
+    if (diff > prev_diff) {
       diverge_count += 1;
       if (diverge_count >= diverge_limit) {
+        std::cout << "~~DIVERGE THRESHOLD~~" << std::endl; 
         break;
       }
     }
     else {
       diverge_count = 0;
     }
-    prev_val = val_avg;
+    prev_diff = diff;
 
     te = clock();
 
-    if (((float)te - (float)ts) > (CLOCKS_PER_SEC * TIMEOUT_LENGTH)) {
+    if (((float)te - (float)ts) > ((float)CLOCKS_PER_SEC * (float)TIMEOUT_LENGTH)) {
       std::cout << "~~ TIMEOUT ~~" << std::endl;
       break;
     }

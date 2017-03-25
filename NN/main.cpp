@@ -26,12 +26,32 @@ using namespace net;
 
 /*
 * Checks if a specified file exists
-* Code retrieved from user PherricOxide
+* Code from user PherricOxide
 * http://stackoverflow.com/questions/12774207/fastest-way-to-check-if-a-file-exist-using-standard-c-c11-c
 */
 bool file_exists(const std::string filename) {
   struct stat buffer;
   return (stat (filename.c_str(), &buffer) == 0);
+}
+
+std::vector<DataSet> convert_to_multi(DataSet orig_set, int feature_count) {
+  std::vector<DataSet> retval(feature_count);
+  arma::vec true_vec(2);
+  true_vec(0) = 1;
+  true_vec(1) = 0;
+  arma::vec false_vec(2);
+  false_vec(0) = 0;
+  false_vec(1) = 1;
+
+  for(auto t : orig_set) {
+    for(int i = 0; i < feature_count; i++) {
+      arma::vec temp_out((t.second[i] == 1) ? true_vec : false_vec);
+      arma::vec temp_in(t.first);
+      retval[i].push_back(std::make_pair(temp_in, temp_out));
+    }
+  }
+
+  return retval;
 }
 
 DataSet read_file(const std::string filename, const int input_count, const int class_count, const int max_outputs=1) {
@@ -44,6 +64,8 @@ DataSet read_file(const std::string filename, const int input_count, const int c
     std::cerr << "Could not open file " << filename << ", Error: " << e.what() << std::endl;
     throw;
   }
+
+
   std::string line;
   while(std::getline(ff, line)) {
     std::stringstream ss;
@@ -53,28 +75,32 @@ DataSet read_file(const std::string filename, const int input_count, const int c
     std::vector<int> expected_classes;
     double dtemp;
     int itemp;
+
     for(int i = 0; i < input_count; i++) {
       ss >> dtemp;
       inputs.push_back(dtemp);
     }
 
-    for(int i = 0; i < max_outputs; i++) {
+    int count = 0;
+    while(count < max_outputs) {
+      count++;
       ss >> itemp;
-      if(ss.fail()) {
+      expected_classes.push_back(itemp);
+      if(!ss) {
         break;
       }
-      else {
-        expected_classes.push_back(itemp);
-      }
     }
+
 
     for(int i = 0; i < expected_classes.size(); i++) {
       outputs[expected_classes[i]] = 1;
     }
 
     sets.push_back(std::make_pair(arma::vec(inputs), arma::vec(outputs)));
+
   }
   ff.close();
+
   return sets;
 }
 
@@ -87,6 +113,7 @@ int main(int argc, char** argv) {
     ("trainfile", po::value<std::string>(), "The file to pull training sets from")
     ("relu,", po::bool_switch()->default_value(false), "Use relu activation instead")
     ("multiclass", po::bool_switch()->default_value(false), "Use multiclass classification")
+    ("multicount", po::value<int>(), "The count of classes to use in multiclass classification")
     ("target,t", po::value<double>(), "The target error to hit while training")
     ("tanh", po::bool_switch()->default_value(false), "Use TanH Activation")
     ("verbose,v", po::bool_switch()->default_value(false), "Print out more information during training and testing")
@@ -116,6 +143,22 @@ int main(int argc, char** argv) {
   ClassificationType class_type = Single;
   int trte_inter = DEF_TRTE_INTER;
   double target = DEF_TARGET;
+  int inputcount = DEF_INPUTS;
+  int outputcount = DEF_OUTPUTS;
+  int multicount = 1;
+
+
+  if(vm.count("multicount")) {
+    multicount = vm["multicount"].as<int>();
+  }
+
+  if (vm.count("inputcount")) {
+    inputcount = vm["inputcount"].as<int>();
+  }
+
+  if (vm.count("outputcount")) {
+    outputcount = vm["outputcount"].as<int>();
+  }
 
   if(vm.count("diverge")) {
     diverge_count = vm["diverge"].as<int>();
@@ -180,16 +223,6 @@ int main(int argc, char** argv) {
   }
 
   if(vm["benchmark"].as<bool>()) {
-    int inputcount = DEF_INPUTS;
-    int outputcount = DEF_OUTPUTS;
-
-    if (vm.count("inputcount")) {
-      inputcount = vm["inputcount"].as<int>();
-    }
-
-    if (vm.count("outputcount")) {
-      outputcount = vm["outputcount"].as<int>();
-    }
 
     if(vm["verbose"].as<bool>()) {
       std::cout << "Reading training file" << std::endl;
@@ -209,8 +242,9 @@ int main(int argc, char** argv) {
       std::cout << "Done Reading testing file" << std::endl;
     }
 
-    size_t lastindex = trainfile.find_last_of(".");
-    std::string trainfile_noext = trainfile.substr(0, lastindex);
+    size_t extension_index = trainfile.find_last_of(".");
+    size_t path_index = trainfile.find_last_of("/") + 1;
+    std::string trainfile_noext = trainfile.substr(path_index, extension_index);
 
     std::cout << "Benchmarking..." << std::endl;
     for(int i = 0; i < 3; i++) {
@@ -241,11 +275,12 @@ int main(int argc, char** argv) {
           act_string = "TanH";
           break;
       }
+      std::cout << "Print Analytics to " << filename << std::endl;
       std::ofstream of(filename);
       double max_accuracy = 0;
       std::string max_dimensions = "";
       double max_momentum = 0;
-      of << "Dimensions,Momentum,Accuracy,Testing Time\n";
+      of << "Dimensions,Momentum,Accuracy,Training Time\n";
       for(int h1 = inputcount; h1 >0; h1--) {
         for(int h2 = inputcount; h2 >= 0; h2--) {
           std::vector<int> dimensions;
@@ -274,7 +309,7 @@ int main(int argc, char** argv) {
               max_momentum = m;
             }
 
-            of << dimen_string << "," << m  << "," << acc << "," << runtime << std::endl;
+            of << dimen_string << "," << m  << "," << acc << "," << runtime << "\n";
             std::cout << "Tested " << act_string << ", Dimensions: [" << dimen_string
                       << "], Momentum: " << m << ", Result: "
                       << acc * 100 << "%, Training time: " << (runtime/CLOCKS_PER_SEC) << std::endl;
@@ -282,15 +317,16 @@ int main(int argc, char** argv) {
           
         }
       }
+      of.close();
       std::cout << std::endl << std::endl;
       std::cout << act_string << " Done Benchmarking, Best Setup: " << std::endl;
       std::cout << "\tDimensions: [" << max_dimensions << "], Momentum: "
                 << max_momentum << ", Accuracy: "
                 << max_accuracy << std::endl << std::endl << std::endl;
-      of.close();
     }
   }
-  else {
+  else 
+  {
     double momentum = DEF_MOMENTUM;
     ActivationType act_type = Sigmoid;
     std::vector<int> dimensions;
@@ -309,43 +345,108 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    DataSet training_sets = read_file(trainfile, dimensions[0], dimensions.back());
+    if(vm["verbose"].as<bool>()) {
+        std::cerr << "Loading Training Datasets... " << std::endl;
+    }
+    DataSet training_sets = read_file(trainfile, dimensions[0], outputcount, multicount);
+    if(vm["verbose"].as<bool>()) {
+        std::cerr << "Done Loading Training Datasets, Shuffling... " << std::endl;
+    }
     //shuffle contents
     std::random_shuffle(training_sets.begin(), training_sets.end());
-
-    DataSet testing_sets = read_file(testfile, dimensions[0], dimensions.back());
+    if(vm["verbose"].as<bool>()) {
+        std::cerr << "Done Shuffling Training Datasets" << std::endl;
+        std::cerr << "Loading Testing Datasets" << std::endl;
+    }
+    DataSet testing_sets = read_file(testfile, dimensions[0], outputcount, multicount);
+    if(vm["verbose"].as<bool>()) {
+      std::cerr << "Done Loading Testing datasets, Shuffling" << std::endl;
+    }
     //shuffle contents
     std::random_shuffle(testing_sets.begin(), testing_sets.end());
-
-    if(vm["relu"].as<bool>() && vm["tanh"].as<bool>()) {
-      std::cerr << "You cannot select both ReLU and TanH as your activation type" << std::endl;
-      exit(2);
-    }
-    else if (vm["relu"].as<bool>()) {
-      act_type = ReLU;
-    }
-    else if(vm["tanh"].as<bool>()) {
-      act_type = TanH;
+    if(vm["verbose"].as<bool>()) {
+      std::cerr << "All Datasets Loaded and Shuffled" << std::endl;
     }
 
-    std::cout << std::endl << std::endl;
 
-    std::cout << "~~ Neural Network ~~" << std::endl;
-    std::cout << "Dimensions (excluding bias): ";
-    for(int i = 0; i < dimensions.size(); i++) {
-      std::cout << dimensions[i] << " ";
+    if (vm["multiclass"].as<bool>()) {
+
+      std::vector<DataSet> training_sets_vec = convert_to_multi(training_sets, outputcount);
+
+      std::vector<DataSet> testing_sets_vec = convert_to_multi(testing_sets, outputcount);
+
+      std::vector<double> results(outputcount);
+      std::vector<bool> is_correct_vec(testing_sets_vec[0].size(), true);
+
+      std::vector<Net*> nn_vec(outputcount);
+      for (int i = 0; i < nn_vec.size(); i++) {
+        nn_vec[i] = new Net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
+        nn_vec[i]->train_and_test(training_sets_vec[i], testing_sets_vec[i], target, trte_inter, diverge_count);
+        double correct = 0;
+        for(int j = 0; j < testing_sets_vec[i].size(); j++) {
+          if(!nn_vec[i]->test_one(testing_sets_vec[i][j])) {
+            is_correct_vec[j] = false;
+          }
+          else {
+            correct++;
+          }
+        }
+        results[i] = correct / testing_sets_vec[i].size();
+        delete nn_vec[i];
+      }
+
+      double total_correct = 0;
+      for(int c = 0; c < is_correct_vec.size(); c++) {
+        if(is_correct_vec[c]) {
+          total_correct++;
+        }
+      }
+
+      std::cout << "Results:" << std::endl;
+      for(int x = 0; x < results.size(); x++) {
+        std::cout << "\t" << results[x] * 100 << std::endl;
+      }
+
+      std::cout << "Total correct: " << total_correct << "/" << is_correct_vec.size() << ", Total Accuracy: " << total_correct / is_correct_vec.size() * 100 << "%" << std::endl;;
     }
-    std::cout << std::endl;
-    std::cout << "Train File: " << trainfile << std::endl;
-    std::cout << "Test File: " << testfile << std::endl;
-    std::cout << std::endl << std::endl;
+    else {
 
-    Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
+      if(vm["relu"].as<bool>() && vm["tanh"].as<bool>()) {
+        std::cerr << "You cannot select both ReLU and TanH as your activation type" << std::endl;
+        exit(2);
+      }
+      else if (vm["relu"].as<bool>()) {
+        act_type = ReLU;
+      }
+      else if(vm["tanh"].as<bool>()) {
+        act_type = TanH;
+      }
 
-    net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
+      std::cout << std::endl << std::endl;
 
-    double acc = net.test(testing_sets);
-    std::cout << "Finished, Accuracy: " << acc * 100 << "%" << std::endl;
+      std::cout << "~~ Neural Network ~~" << std::endl;
+      std::cout << "Dimensions (excluding bias): ";
+      for(int i = 0; i < dimensions.size(); i++) {
+        std::cout << dimensions[i] << " ";
+      }
+      std::cout << std::endl;
+      std::cout << "Train File: " << trainfile << std::endl;
+      std::cout << "Test File: " << testfile << std::endl;
+      std::cout << std::endl << std::endl;
+
+      if(vm["verbose"].as<bool>()) {
+        std::cerr << " Creating Network..." << std::endl;
+      }
+      Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
+
+      if(vm["verbose"].as<bool>()) {
+        std::cerr << "Starting Training..." << std::endl;
+      }
+      net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count);
+
+      double acc = net.test(testing_sets);
+      std::cout << "Finished, Accuracy: " << acc * 100 << "%" << std::endl;
+    }
   }
 
 

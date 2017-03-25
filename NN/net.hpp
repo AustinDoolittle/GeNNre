@@ -13,8 +13,8 @@
 #define ERR_CHANGE .00000000001
 #define DEF_TRAIN_RATE 0.5
 #define DEF_DROPOUT 0.5
-#define DEF_DROPOUT_INP 0.9
-#define TIMEOUT_LENGTH 18000
+#define DEF_DROPOUT_INP 0.8
+#define TIMEOUT_LENGTH 900
 #define DEF_VAL_INTERVALS 5
 
 
@@ -22,8 +22,8 @@
 #define RELU_ACT [](double val) {return val > (LEAKY_RELU_CONST * val) ? val : (LEAKY_RELU_CONST * val);}
 #define TANH_ACT [](double val) {return (2.0 / (1.0 + std::exp(-2.0 * val))) - 1;}
 #define RELU_CLIPPER [](double val) {return (std::abs(val) > RELU_THRESH) ? val * (RELU_THRESH / std::abs(val)) : val;}
-#define DROPOUT_ALG [](double val) {return val * random_from_prob(DEF_DROPOUT);}
-#define DROPOUT_INP_ALG [](double val) {return val * random_from_prob(DEF_DROPOUT_INP);}
+#define DROPOUT_ALG [](double val) {return random_from_prob(DEF_DROPOUT) ? val : 0;}
+#define DROPOUT_INP_ALG [](double val) {return random_from_prob(DEF_DROPOUT_INP) ? val : 0;}
 #define DROPOUT_FORWARD_ALG [](double val) {return val * DEF_DROPOUT;}
 #define DROPOUT_INP_FORWARD_ALG [](double val) {return val * DEF_DROPOUT_INP;}
 
@@ -49,6 +49,7 @@ namespace net {
     arma::vec forward_test(const arma::vec inputs);
     void back_prop(const arma::vec expected);
     double get_error(const arma::vec expected);
+    bool test_one(const std::pair<arma::vec,arma::vec>);
     double test(DataSet s);
     void train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_count);
     std::string to_s();
@@ -56,8 +57,12 @@ namespace net {
     ActivationType act_type;
     ClassificationType class_type;
     std::vector<arma::mat> weights;
+    std::vector<arma::mat> prev_weights;
     std::vector<arma::mat> del_weights;
     std::vector<arma::mat> prev_del_weights;
+
+
+
     std::vector<arma::vec> layers;
     void rollback_weights();
     arma::vec deriverator(arma::vec v);
