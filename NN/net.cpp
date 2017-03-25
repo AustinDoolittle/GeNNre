@@ -338,7 +338,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
       break;
     }
     else {
-      std::cout << "\tValidate " << val_counter  << ", Error: " << val_avg << ", Diff: " << diff << ", Target: " << target << std::endl;
+      std::cout << "\tValidate " << val_counter  << ", Train Err: " << tr_avg << ", Val Err: " << val_avg << ", Diff: " << diff << ", Target: " << target << std::endl;
       
       val_counter++;
     }

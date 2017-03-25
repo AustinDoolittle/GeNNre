@@ -218,8 +218,8 @@ int main(int argc, char** argv) {
     class_type = Multi;
   }
 
-  if(vm.count("trteinter")) {
-    trte_inter = vm["trteinter"].as<int>();
+  if(vm.count("interval")) {
+    trte_inter = vm["interval"].as<int>();
   }
 
   if(vm["benchmark"].as<bool>()) {

@@ -1,7 +1,7 @@
 #!/bin/sh
 
 dataset_dir="Datasets/"
-flags="--target 0.0001  --interval 10 --benchmark --inputcount 11"
+flags="--target 0.0001  --interval 100 --benchmark --inputcount 11"
 
 #build
 make clean
