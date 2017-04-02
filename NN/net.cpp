@@ -89,12 +89,14 @@ arma::vec Net::forward_train(const arma::vec inputs) {
       if(this->dropout)  {
         layers[i].rows(1, layers[i].n_rows - 1).transform(DROPOUT_ALG);
       }
+      layers[i].rows(1, layers[i].n_rows - 1).transform(this->activator);
+
     }
     else {
       layers[i] = weights[i-1].t() * layers[i-1];
+      layers[i].transform(this->activator);
     }
 
-    layers[i].transform(this->activator);
 
   }
 
@@ -218,12 +220,8 @@ bool Net::test_one(std::pair<arma::vec,arma::vec> s) {
       expected_index = j;
     }
   }
-  if(max_index == expected_index) {
-    return true;
-  }
-  else {
-    return false;
-  }
+  
+  return max_index == expected_index;
 }
 
 double Net::test(DataSet s) {
@@ -324,7 +322,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     double val_avg = 0;
     for(int v = 0; v < DEF_VAL_INTERVALS; v++) {
       forward_test(test_data[test_index].first);
-      val_avg = get_error(test_data[test_index].second);
+      val_avg += get_error(test_data[test_index].second);
       test_index = (test_index + 1) % test_data.size();
     }
     val_avg /= DEF_VAL_INTERVALS;

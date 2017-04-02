@@ -289,8 +289,14 @@ int main(int argc, char** argv) {
       std::string max_dimensions = "";
       double max_momentum = 0;
       of << "Dimensions,Momentum,Accuracy,Training Time\n";
-      for(int h1 = inputcount; h1 >0; h1--) {
-        for(int h2 = inputcount; h2 >= 0; h2--) {
+
+      //h1 starts at the input plus 25% of the input
+      for(int h1 = inputcount + (int)(inputcount * .25); h1 >0; h1--) {
+        //inputs + outputs * .666, then subtract h1
+        //If this is under 0, set to 0
+        int h2_start = ((inputcount + outputcount) * (2.0/3.0)) - h1;
+        h2_start = h2_start < 0 ? 0 : h2_start; 
+        for(int h2 = h2_start; h2 >= 0; h2--) {
           std::vector<int> dimensions;
           std::string dimen_string = std::to_string(inputcount) + " " + std::to_string(h1) + " ";
           dimensions.push_back(inputcount);
