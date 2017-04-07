@@ -10,11 +10,11 @@
 
 #define LEAKY_RELU_CONST .01
 #define RELU_THRESH 1
-#define ERR_CHANGE .00000000001
+#define ERR_CHANGE .00000001
 #define DEF_TRAIN_RATE 0.5
 #define DEF_DROPOUT 0.5
 #define DEF_DROPOUT_INP 0.8
-#define DEF_VAL_INTERVALS 5
+#define DEF_VAL_INTERVALS 15
 
 
 #define SIG_ACT [](double val) {return 1.0/(1.0 + std::exp(-val));}
@@ -28,6 +28,7 @@
 
 namespace net {
   typedef std::vector<std::pair<arma::vec,arma::vec>> DataSet;
+  typedef std::vector<std::pair<arma::vec, std::string>> DemoSet;
 
   enum ActivationType {
     Sigmoid,
@@ -52,6 +53,7 @@ namespace net {
     double test(DataSet s);
     void train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_count, int timeout);
     std::string to_s();
+    void stop_training();
   private:
     ActivationType act_type;
     ClassificationType class_type;
@@ -59,9 +61,6 @@ namespace net {
     std::vector<arma::mat> prev_weights;
     std::vector<arma::mat> del_weights;
     std::vector<arma::mat> prev_del_weights;
-
-
-
     std::vector<arma::vec> layers;
     void rollback_weights();
     arma::vec deriverator(arma::vec v);
@@ -73,6 +72,8 @@ namespace net {
     std::function<double(double)> relu_clipper;
     bool verbose;
     bool dropout;
+    bool user_stopped;
+
 
     void load_inputs(const arma::vec inputs);
     // std::vector<double> get_outputs(int index);

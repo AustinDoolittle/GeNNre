@@ -9,6 +9,9 @@
 #include <algorithm>
 #include "boost/program_options.hpp"
 #include "net.hpp"
+#include <time.h>
+#include <csignal>
+
 
 #define DEF_TRTE_INTER 10
 #define DEF_TARGET .2
@@ -21,9 +24,15 @@
 #define SIG_STAT_FILE "sig.csv"
 #define TANH_STAT_FILE "tanh.csv"
 #define ANALYTICS_DIR "Analytics/"
+#define DEF_DEMO_FILE "Datasets/9demo_demo.dat"
+#define DEF_KEYS_FILE "Keys/genres_clipped.key"
 
 namespace po = boost::program_options;
 using namespace net;
+
+net::Net* demo_net;
+bool is_demo;
+bool is_training;
 
 /*
 * Checks if a specified file exists
@@ -33,6 +42,17 @@ using namespace net;
 bool file_exists(const std::string filename) {
   struct stat buffer;
   return (stat (filename.c_str(), &buffer) == 0);
+}
+
+void signal_catcher(int sig) {
+  if ((!is_training && is_demo) || !is_demo) {
+    exit(0);
+  }
+  else {
+    std::cout << "STOPPING TRAINING" << std::endl;
+    demo_net->stop_training();
+    is_training = false;
+  }
 }
 
 std::vector<DataSet> convert_to_multi(DataSet orig_set, int feature_count) {
@@ -105,6 +125,37 @@ DataSet read_file(const std::string filename, const int input_count, const int c
   return sets;
 }
 
+std::vector<std::string> load_keys(std::string filename) {
+  std::vector<std::string> retval;
+  std::ifstream f(filename);
+  std::string s;
+  while(f >> s) {
+    retval.push_back(s);
+  }
+  return retval;
+}
+
+DemoSet read_demo_file(std::string demo_file) {
+  std::string line;
+  std::ifstream f(demo_file);
+  DemoSet retval;
+
+  while(std::getline(f, line)) {
+    std::stringstream s(line);
+    std::vector<double> inputs;
+    double val;
+    char comma_catcher;
+    for(int i = 0; i < 11; i++) {
+      s >> val >> comma_catcher;
+      inputs.push_back(val);
+    } 
+    std::string song_name;
+    std::getline(s, song_name);
+    retval.push_back(std::make_pair(arma::vec(inputs), song_name));
+  }
+  return retval;
+}
+
 int main(int argc, char** argv) {
   //Setup argument parsing
   po::options_description desc("Allowed Arguments");
@@ -126,8 +177,8 @@ int main(int argc, char** argv) {
     ("timeout", po::value<int>(), "The timeout in seconds of training")
     ("diverge", po::value<int>(), "The count of consecutive divergence in the validation set before stopping training (also the upper bound in benchmarking)")
     ("benchmark", po::bool_switch()->default_value(false), "Test the different configurations and store the results in a CSV")
-    ("dimensions,d", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)");
-
+    ("dimensions,d", po::value<std::vector<int>>()->multitoken(), "The topology of the neural network (not including bias nodes, only used for individual neural nets)")
+    ("demo", po::bool_switch()->default_value(false), "Setup the environment to demo");
 
   po::variables_map vm;
   po::store(po::parse_command_line(argc, argv, desc), vm);
@@ -138,6 +189,8 @@ int main(int argc, char** argv) {
     std::cout << desc << std::endl;
     std::exit(0);
   }
+
+  std::signal(SIGINT, signal_catcher);
 
   //declare variables
   std::string testfile;
@@ -150,6 +203,7 @@ int main(int argc, char** argv) {
   int outputcount = DEF_OUTPUTS;
   int multicount = 1;
   int timeout = DEF_TIMEOUT;
+  is_demo = vm["demo"].as<bool>();
 
 
   if(vm.count("multicount")) {
@@ -255,7 +309,7 @@ int main(int argc, char** argv) {
     std::string trainfile_noext = trainfile.substr(path_index, extension_index - path_index);
 
     std::cout << "Benchmarking..." << std::endl;
-    for(int i = 0; i < 3; i++) {
+    for(int i = 0; i < 1; i++) {
       ActivationType act;
       std::string act_string = "";
       std::string filename = "";
@@ -267,12 +321,12 @@ int main(int argc, char** argv) {
         connector = "_";
       }
        switch(i) {
-        case 0:
+        case 1:
           act = ReLU;
           filename = ANALYTICS_DIR + trainfile_noext + connector + RELU_STAT_FILE;
           act_string = "ReLU";
           break;
-        case 1:
+        case 0:
         act = Sigmoid;
         filename = ANALYTICS_DIR + trainfile_noext + connector + SIG_STAT_FILE;
         act_string = "Sigmoid";
@@ -291,12 +345,15 @@ int main(int argc, char** argv) {
       of << "Dimensions,Momentum,Accuracy,Training Time\n";
 
       //h1 starts at the input plus 25% of the input
-      for(int h1 = inputcount + (int)(inputcount * .25); h1 >0; h1--) {
+      for(int h1 = inputcount + (int)(inputcount * .25); h1 >= outputcount; h1--) {
         //inputs + outputs * .666, then subtract h1
         //If this is under 0, set to 0
         int h2_start = ((inputcount + outputcount) * (2.0/3.0)) - h1;
         h2_start = h2_start < 0 ? 0 : h2_start; 
         for(int h2 = h2_start; h2 >= 0; h2--) {
+          if (h2 != 0 && h2 < h1) {
+            continue;
+          }
           std::vector<int> dimensions;
           std::string dimen_string = std::to_string(inputcount) + " " + std::to_string(h1) + " ";
           dimensions.push_back(inputcount);
@@ -451,19 +508,58 @@ int main(int argc, char** argv) {
       if(vm["verbose"].as<bool>()) {
         std::cerr << " Creating Network..." << std::endl;
       }
-      Net net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
+      demo_net = new Net(dimensions, class_type, act_type, momentum, vm["verbose"].as<bool>(), vm["dropout"].as<bool>());
 
       if(vm["verbose"].as<bool>()) {
         std::cerr << "Starting Training..." << std::endl;
       }
-      net.train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count, timeout);
 
-      double acc = net.test(testing_sets);
-      std::cout << "Finished, Accuracy: " << acc * 100 << "%" << std::endl;
+      std::clock_t ts, te;
+      ts = clock();
+      is_training = true;
+      demo_net->train_and_test(training_sets, testing_sets, target, trte_inter, diverge_count, timeout);
+      is_training = false;
+      te = clock();
+
+      double acc = demo_net->test(testing_sets);
+      std::cout << "Finished, Accuracy: " << acc * 100 << "%, Train time: " << (te-ts) / (CLOCKS_PER_SEC + 0.0)<< std::endl;
+      
+      if(is_demo)  {
+        std::cout << "Training Stopped" << std::endl << std::endl;
+
+        DemoSet demo_sets = read_demo_file(DEF_DEMO_FILE);
+        std::vector<std::string> keys = load_keys(DEF_KEYS_FILE);
+
+
+        int choice;
+        for(int i = 0; i < demo_sets.size(); i++) {
+          std::cout << "\t(" << i << ") " + demo_sets[i].second << std::endl;
+        }
+
+        while(true) {
+          choice = -1;
+          while(choice < 0 || choice >= demo_sets.size()) {
+            std::cout << "Enter a song number (0-" << demo_sets.size() - 1 << "): ";
+            std::cin >> choice;
+            if (choice < 0 || choice >= demo_sets.size()) {
+              std::cout << choice << " is not an option!" << std::endl;
+            }
+          }
+          arma::vec res = demo_net->forward_test(demo_sets[choice].first);
+          int max_index = -1;
+          double max_val = 0;
+          for(int j = 0; j < res.size(); j++) {
+            if(res(j) > max_val) {
+              max_index = j;
+              max_val = res(j);
+            }
+          }
+          std::cout << "I think this is " << keys[max_index] << std::endl << std::endl;
+        }
+      }
+      delete demo_net;
     }
   }
-
-
 
   exit(0);
 

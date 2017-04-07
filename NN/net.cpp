@@ -259,6 +259,10 @@ void Net::rollback_weights() {
   this->del_weights = this->prev_del_weights;
 }
 
+void Net::stop_training() {
+  this->user_stopped = true;
+}
+
 void Net::train_and_test(DataSet train_data, DataSet test_data, double target, double training_interval, int diverge_limit, int timeout) {
   int test_index = 0;
   double prev_diff = 0;
@@ -267,6 +271,9 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
   ts = clock();
 
   int counter = 0;
+  this->user_stopped = false;
+  std::vector<arma::mat> best_weights;
+  double best_acc = 0;
   int val_counter = 1;
   this->prev_weights = weights;
   this->prev_del_weights = del_weights;
@@ -306,7 +313,7 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
         this->prev_del_weights = this->del_weights;
       }
       else if(tr_avg > (prev_err + ERR_CHANGE)) {
-        rollback_weights();
+        //rollback_weights();
         this->train_rate *= .5;
       }
 
@@ -320,27 +327,36 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
     }
 
     double val_avg = 0;
-    for(int v = 0; v < DEF_VAL_INTERVALS; v++) {
+    double correct = 0;
+    for(int v = 0; v < test_data.size(); v++) {
       forward_test(test_data[test_index].first);
       val_avg += get_error(test_data[test_index].second);
       test_index = (test_index + 1) % test_data.size();
+      if (test_one(test_data[test_index])) {
+        correct++;
+      }
     }
-    val_avg /= DEF_VAL_INTERVALS;
+    val_avg /= test_data.size();
 
-    double diff = tr_avg - val_avg;
+    double diff = val_avg - tr_avg ;
+    double val_acc = (correct / test_data.size()) * 100;
 
-
+    if(val_acc > best_acc)
+    {
+      best_weights = this->weights;
+      best_acc = val_acc;
+    }
     if (val_avg <= target) {
       std::cout << "Finished Training: " << val_avg << std::endl;
       break;
     }
     else {
-      std::cout << "\tValidate " << val_counter  << ", Train Err: " << tr_avg << ", Val Err: " << val_avg << ", Diff: " << diff << ", Target: " << target << std::endl;
+      std::cout << "\tValidate " << val_counter  << ", Val Err: " << val_avg << ", Diff: " << diff << ", Target: " << target << ", Accuracy: " << val_acc << "%" << std::endl;
       
       val_counter++;
     }
 
-    if (diff > prev_diff) {
+    if (diff >= prev_diff + ERR_CHANGE) {
       diverge_count += 1;
       if (diverge_count >= diverge_limit) {
         std::cout << "~~DIVERGE THRESHOLD~~" << std::endl; 
@@ -358,5 +374,13 @@ void Net::train_and_test(DataSet train_data, DataSet test_data, double target, d
       std::cout << "~~ TIMEOUT ~~" << std::endl;
       break;
     }
+
+    if(this->user_stopped) {
+      std::cout << "~~ USER TERMINATED ~~" << std::endl;
+      std::cout << "Max Accuracy: " << best_acc << "%, Loading weights..." << std::endl;
+      this->weights = best_weights;
+      break;
+    }
+
   }
 }
